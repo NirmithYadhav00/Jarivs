@@ -1,0 +1,51 @@
+# --- Python backend ---
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.log
+.env
+requirements.txt
+build/
+dist/
+
+# --- Flutter/Dart frontend ---
+frontend/build/
+frontend/.dart_tool/
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+coverage/
+**/ios/Flutter/.last_build_id
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# --- IDE / Editor files ---
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+*.swp
+
+# --- Miscellaneous ---
+*.class
+.DS_Store
+.atom/
+.svn/
+.swiftpm/
+migrate_working_dir/
+.build/
+.buildlog/
+.history
+
+# --- Symbolication / Obfuscation ---
+app.*.symbols
+app.*.map.json
+
+# --- Markdown files ---
+# Allow README.md to be tracked
+*.md
+!README.md
