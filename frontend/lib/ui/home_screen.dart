@@ -23,7 +23,6 @@ class _HomeScreenState extends State<HomeScreen> {
   bool isListening = false;
   bool isProcessing = false;
 
-  // 🔥 PRIORITY APPS
   final Map<String, String> priorityApps = {
     "google": "com.google.android.googlequicksearchbox",
     "youtube": "com.google.android.youtube",
@@ -69,7 +68,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return text.toLowerCase().trim();
   }
 
-  // 🌐 API CALL
   Future<Map<String, dynamic>> _sendToBackend(String text) async {
     final url =
         Uri.parse("https://jarivs-1.onrender.com/api/v1/process");
@@ -94,7 +92,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // 🎤 MAIN FLOW
   Future<void> _onSpeechResult(String result) async {
     if (isProcessing) return;
 
@@ -128,7 +125,6 @@ class _HomeScreenState extends State<HomeScreen> {
     isProcessing = false;
   }
 
-  // ⚙️ COMMAND HANDLER
   Future<void> _handleCommand(
       String? action, String? app, String query) async {
     if (action == null) return;
@@ -136,16 +132,14 @@ class _HomeScreenState extends State<HomeScreen> {
     query = normalize(query);
     app = app != null ? normalize(app) : null;
 
-    print("⚙️ Action: $action | App: $app");
-
-    // 🔥 PRIORITY FIRST
+    // 🔥 PRIORITY
     if (app != null && priorityApps.containsKey(app)) {
       await DeviceApps.openApp(priorityApps[app]!);
       return;
     }
 
     if (action == "open_youtube") {
-      await _openYouTube();
+      await _openYouTube(app); // ✅ FIXED
       return;
     }
 
@@ -170,7 +164,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // 🔥 SMART MATCHING
   Future<bool> _smartAppOpen(String query) async {
     final apps = await DeviceApps.getInstalledApplications(
       onlyAppsWithLaunchIntent: true,
@@ -178,34 +171,25 @@ class _HomeScreenState extends State<HomeScreen> {
 
     query = normalize(query);
 
-    bool isBad(String name) {
-      if (query == "google" && name.contains("games")) return true;
-      if (query == "google" && name.contains("one")) return true;
-      return false;
-    }
-
-    // ✅ EXACT
     for (var app in apps) {
       final name = normalize(app.appName);
-      if (name == query && !isBad(name)) {
+      if (name == query) {
         await DeviceApps.openApp(app.packageName);
         return true;
       }
     }
 
-    // ✅ STARTS WITH
     for (var app in apps) {
       final name = normalize(app.appName);
-      if (name.startsWith(query) && !isBad(name)) {
+      if (name.startsWith(query)) {
         await DeviceApps.openApp(app.packageName);
         return true;
       }
     }
 
-    // ✅ CONTAINS
     for (var app in apps) {
       final name = normalize(app.appName);
-      if (name.contains(query) && !isBad(name)) {
+      if (name.contains(query)) {
         await DeviceApps.openApp(app.packageName);
         return true;
       }
@@ -214,11 +198,18 @@ class _HomeScreenState extends State<HomeScreen> {
     return false;
   }
 
-  // ▶️ YOUTUBE
-  Future<void> _openYouTube() async {
-    const package = "com.google.android.youtube";
+  // 🔥 FIXED YOUTUBE
+  Future<void> _openYouTube([String? query]) async {
+    if (query != null && query.isNotEmpty) {
+      final url = Uri.parse(
+        "https://www.youtube.com/results?search_query=${Uri.encodeComponent(query)}",
+      );
 
-    bool opened = await DeviceApps.openApp(package);
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+      return;
+    }
+
+    bool opened = await DeviceApps.openApp("com.google.android.youtube");
 
     if (!opened) {
       await launchUrl(
@@ -228,12 +219,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // 📞 CALL
   Future<void> _makeCall() async {
     await AndroidIntent(action: 'android.intent.action.DIAL').launch();
   }
 
-  // 💬 SMS
   Future<void> _sendSMS() async {
     await AndroidIntent(
       action: 'android.intent.action.SENDTO',
@@ -241,10 +230,7 @@ class _HomeScreenState extends State<HomeScreen> {
     ).launch();
   }
 
-  // 🔥 SYSTEM INTENTS (CRITICAL FIX)
   Future<void> _trySystemIntent(String query) async {
-    query = normalize(query);
-
     if (query.contains("settings")) {
       await AndroidIntent(
         action: 'android.settings.SETTINGS',
@@ -260,16 +246,16 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (query.contains("photos") || query.contains("gallery")) {
-  bool opened = await DeviceApps.openApp("com.google.android.apps.photos");
+      bool opened = await DeviceApps.openApp("com.google.android.apps.photos");
 
-  if (!opened) {
-    await launchUrl(
-      Uri.parse("content://media/external/images/media"),
-      mode: LaunchMode.externalApplication,
-    );
-  }
-  return;
-}
+      if (!opened) {
+        await launchUrl(
+          Uri.parse("content://media/external/images/media"),
+          mode: LaunchMode.externalApplication,
+        );
+      }
+      return;
+    }
 
     if (query.contains("recorder") || query.contains("voice")) {
       await AndroidIntent(
