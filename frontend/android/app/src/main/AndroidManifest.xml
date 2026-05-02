@@ -3,6 +3,7 @@
     <!-- ✅ ADD THESE LINES HERE -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.READ_CONTACTS"/>
 
     <application
         android:label="frontend"

@@ -6,7 +6,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:device_apps/device_apps.dart';
-import 'package:android_intent_plus/android_intent.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -31,10 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
     "whatsapp": "com.whatsapp",
     "chatgpt": "com.openai.chatgpt",
     "clock": "com.google.android.deskclock",
-    "github": "com.github.android",
-    "hotstar": "in.startv.hotstar",
     "gpay": "com.google.android.apps.nbu.paisa.user",
-    "google pay": "com.google.android.apps.nbu.paisa.user",
   };
 
   @override
@@ -49,6 +46,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _initApp() async {
     await Permission.microphone.request();
+    await Permission.contacts.request();
     await _stt.init();
   }
 
@@ -64,10 +62,9 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  String normalize(String text) {
-    return text.toLowerCase().trim();
-  }
+  String normalize(String text) => text.toLowerCase().trim();
 
+  // 🌐 API
   Future<Map<String, dynamic>> _sendToBackend(String text) async {
     final url =
         Uri.parse("https://jarivs-1.onrender.com/api/v1/process");
@@ -84,19 +81,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
-      } else {
-        return {"type": "text", "response": "Server error"};
       }
     } catch (e) {
-      return {"type": "text", "response": "Connection failed"};
+      print("API ERROR: $e");
     }
+
+    return {"type": "text", "response": "Connection failed"};
   }
 
+  // 🎤 MAIN FLOW
   Future<void> _onSpeechResult(String result) async {
     if (isProcessing) return;
 
     isProcessing = true;
-
     _stt.stopListening();
 
     setState(() {
@@ -104,196 +101,169 @@ class _HomeScreenState extends State<HomeScreen> {
       _text = "You said: $result";
     });
 
-    try {
-      final response = await _sendToBackend(result);
+    final response = await _sendToBackend(result);
 
-      final message = response["response"];
-      final action = response["action"];
-      final app = response["app"];
+    final message = response["response"];
+    final action = response["action"];
+    final app = response["app"];
+    final contact = response["contact"];
+    final msg = response["message"];
 
-      setState(() {
-        _text = message ?? "No response";
-      });
+    setState(() {
+      _text = message ?? "No response";
+    });
 
-      await _tts.speak(message ?? "No response");
+    await _tts.speak(message ?? "No response");
 
-      await _handleCommand(action, app, result);
-    } catch (e) {
-      print("❌ ERROR: $e");
-    }
+    await _handleCommand(action, app, contact, msg);
 
     isProcessing = false;
   }
 
+  // 🔥 CONTACT FINDER (STABLE)
+  Future<String?> _findContactNumber(String name) async {
+    final permission = await FlutterContacts.requestPermission();
+
+    if (!permission) return null;
+
+    final contacts = await FlutterContacts.getContacts(
+      withProperties: true,
+    );
+
+    name = name.toLowerCase();
+
+    for (var c in contacts) {
+      final display = c.displayName.toLowerCase();
+
+      if (display.contains(name)) {
+        if (c.phones.isNotEmpty) {
+          return c.phones.first.number;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  // ⚙️ COMMAND HANDLER
   Future<void> _handleCommand(
-      String? action, String? app, String query) async {
+      String? action, String? app, String? contact, String? message) async {
     if (action == null) return;
 
-    query = normalize(query);
-    app = app != null ? normalize(app) : null;
-
-    // 🔥 PRIORITY
+    // PRIORITY APPS
     if (app != null && priorityApps.containsKey(app)) {
       await DeviceApps.openApp(priorityApps[app]!);
       return;
     }
 
-    if (action == "open_youtube") {
-      await _openYouTube(app); // ✅ FIXED
-      return;
-    }
+    switch (action) {
+      case "open_youtube":
+        await _openYouTube(app);
+        break;
 
-    if (action == "open_app" && app != null) {
-      final opened = await _smartAppOpen(app);
+      case "open_app":
+        if (app != null) await _openApp(app);
+        break;
 
-      if (!opened) {
-        await _trySystemIntent(app);
-      }
+      case "call":
+        await _call(contact);
+        break;
 
-      return;
-    }
+      case "sms":
+        await _sendSMS(contact, message);
+        break;
 
-    if (action == "call") {
-      await _makeCall(app);
-      return;
-    }
+      case "whatsapp_message":
+        await _sendWhatsApp(contact, message);
+        break;
 
-    if (action == "sms") {
-      await _sendSMS(app, null);
-      return;
+      case "search_google":
+        await _searchGoogle(app ?? "");
+        break;
     }
   }
 
-  Future<bool> _smartAppOpen(String query) async {
+  // 📱 APP OPEN
+  Future<void> _openApp(String name) async {
     final apps = await DeviceApps.getInstalledApplications(
       onlyAppsWithLaunchIntent: true,
     );
 
-    query = normalize(query);
-
     for (var app in apps) {
-      final name = normalize(app.appName);
-      if (name == query) {
+      if (normalize(app.appName).contains(name)) {
         await DeviceApps.openApp(app.packageName);
-        return true;
+        return;
       }
     }
-
-    for (var app in apps) {
-      final name = normalize(app.appName);
-      if (name.startsWith(query)) {
-        await DeviceApps.openApp(app.packageName);
-        return true;
-      }
-    }
-
-    for (var app in apps) {
-      final name = normalize(app.appName);
-      if (name.contains(query)) {
-        await DeviceApps.openApp(app.packageName);
-        return true;
-      }
-    }
-
-    return false;
   }
 
-  // 🔥 FIXED YOUTUBE
+  // ▶️ YOUTUBE
   Future<void> _openYouTube([String? query]) async {
     if (query != null && query.isNotEmpty) {
       final url = Uri.parse(
         "https://www.youtube.com/results?search_query=${Uri.encodeComponent(query)}",
       );
-
       await launchUrl(url, mode: LaunchMode.externalApplication);
       return;
     }
 
-    bool opened = await DeviceApps.openApp("com.google.android.youtube");
+    await DeviceApps.openApp("com.google.android.youtube");
+  }
 
-    if (!opened) {
-      await launchUrl(
-        Uri.parse("https://www.youtube.com"),
-        mode: LaunchMode.externalApplication,
-      );
+  // 📞 CALL
+  Future<void> _call(String? name) async {
+    if (name == null || name.isEmpty) return;
+
+    final number = await _findContactNumber(name);
+
+    if (number != null) {
+      await launchUrl(Uri.parse("tel:$number"));
+    } else {
+      await _tts.speak("Contact not found");
     }
   }
 
-  Future<void> _makeCall(String? number) async {
-  if (number != null && number.isNotEmpty) {
-    final uri = Uri.parse("tel:$number");
-    await launchUrl(uri);
-  } else {
-    await AndroidIntent(
-      action: 'android.intent.action.DIAL',
-    ).launch();
+  // 📩 SMS
+  Future<void> _sendSMS(String? name, String? message) async {
+    if (name == null || name.isEmpty) return;
+
+    final number = await _findContactNumber(name);
+
+    if (number != null) {
+      final uri = Uri.parse(
+        "sms:$number?body=${Uri.encodeComponent(message ?? "")}",
+      );
+      await launchUrl(uri);
+    } else {
+      await _tts.speak("Contact not found");
+    }
   }
-}
 
-Future<void> sendWhatsApp(String number, String message) async {
-  final url = Uri.parse(
-    "https://wa.me/$number?text=${Uri.encodeComponent(message)}",
-  );
+  // 🟢 WHATSAPP
+  Future<void> _sendWhatsApp(String? name, String? message) async {
+    if (name == null || name.isEmpty) return;
 
-  await launchUrl(url, mode: LaunchMode.externalApplication);
-}
+    final number = await _findContactNumber(name);
 
-  Future<void> _sendSMS(String? number, String? message) async {
-  if (number != null && number.isNotEmpty) {
-    final uri = Uri.parse(
-      "sms:$number?body=${Uri.encodeComponent(message ?? "")}",
+    if (number != null) {
+      final clean = number.replaceAll(RegExp(r'\D'), '');
+      final url = Uri.parse(
+        "https://wa.me/$clean?text=${Uri.encodeComponent(message ?? "")}",
+      );
+
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } else {
+      await _tts.speak("Contact not found");
+    }
+  }
+
+  // 🔍 GOOGLE SEARCH
+  Future<void> _searchGoogle(String query) async {
+    final url = Uri.parse(
+      "https://www.google.com/search?q=${Uri.encodeComponent(query)}",
     );
 
-    await launchUrl(uri);
-  } else {
-    // fallback (no number)
-    await AndroidIntent(
-      action: 'android.intent.action.SENDTO',
-      data: 'smsto:',
-    ).launch();
-  }
-}
-
-  Future<void> _trySystemIntent(String query) async {
-    if (query.contains("settings")) {
-      await AndroidIntent(
-        action: 'android.settings.SETTINGS',
-      ).launch();
-      return;
-    }
-
-    if (query.contains("camera")) {
-      await AndroidIntent(
-        action: 'android.media.action.IMAGE_CAPTURE',
-      ).launch();
-      return;
-    }
-
-    if (query.contains("photos") || query.contains("gallery")) {
-      bool opened = await DeviceApps.openApp("com.google.android.apps.photos");
-
-      if (!opened) {
-        await launchUrl(
-          Uri.parse("content://media/external/images/media"),
-          mode: LaunchMode.externalApplication,
-        );
-      }
-      return;
-    }
-
-    if (query.contains("recorder") || query.contains("voice")) {
-      await AndroidIntent(
-        action: 'android.provider.MediaStore.RECORD_SOUND',
-      ).launch();
-      return;
-    }
-
-    if (query.contains("phone") || query.contains("dial")) {
-      await AndroidIntent(
-        action: 'android.intent.action.DIAL',
-      ).launch();
-      return;
-    }
+    await launchUrl(url, mode: LaunchMode.externalApplication);
   }
 
   @override

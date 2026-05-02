@@ -4,6 +4,7 @@ from app.providers.groq_provider import call_groq
 
 router = APIRouter()
 
+# 🔥 APP ALIASES
 APP_ALIASES = {
     "youtube": ["youtube", "you tube", "yt"],
     "whatsapp": ["whatsapp", "whats app"],
@@ -18,6 +19,7 @@ APP_ALIASES = {
 }
 
 
+# 🔥 SMART APP MATCHING
 def normalize_app_name(query: str):
     query = f" {query} "
 
@@ -41,7 +43,7 @@ def process(request: UserRequest):
     query = request.query.lower().strip()
 
     try:
-        # 🔥 YOUTUBE SEARCH FIRST (IMPORTANT ORDER)
+        # 🔥 YOUTUBE SEARCH
         if "youtube" in query and "search" in query:
             search_query = (
                 query.replace("search youtube", "")
@@ -58,7 +60,7 @@ def process(request: UserRequest):
                 "app": search_query,
             }
 
-        # 🔥 GOOGLE SEARCH
+        # 🔍 GOOGLE SEARCH
         if query.startswith("search"):
             search_query = query.replace("search", "").strip()
 
@@ -69,14 +71,54 @@ def process(request: UserRequest):
                 "app": search_query,
             }
 
-        # 🔥 OPEN COMMAND
+        # 📞 CALL BY NAME
+        if query.startswith("call"):
+            name = query.replace("call", "").strip()
+
+            return {
+                "type": "command",
+                "response": f"Calling {name}",
+                "action": "call",
+                "contact": name,
+            }
+
+        # 📩 SMS BY NAME
+        if query.startswith("send sms"):
+            parts = query.replace("send sms", "").strip().split(" ", 1)
+
+            contact = parts[0] if len(parts) > 0 else ""
+            message = parts[1] if len(parts) > 1 else ""
+
+            return {
+                "type": "command",
+                "response": f"Sending SMS to {contact}",
+                "action": "sms",
+                "contact": contact,
+                "message": message,
+            }
+
+        # 🟢 WHATSAPP MESSAGE
+        if query.startswith("send whatsapp"):
+            parts = query.replace("send whatsapp", "").strip().split(" ", 1)
+
+            contact = parts[0] if len(parts) > 0 else ""
+            message = parts[1] if len(parts) > 1 else ""
+
+            return {
+                "type": "command",
+                "response": f"Opening WhatsApp for {contact}",
+                "action": "whatsapp_message",
+                "contact": contact,
+                "message": message,
+            }
+
+        # 🔥 OPEN APP
         if query.startswith("open"):
             app_name = normalize_app_name(query)
 
             if not app_name:
                 app_name = query.replace("open", "").strip()
 
-            # 🎯 SPECIAL CASE
             if app_name == "youtube":
                 return {
                     "type": "command",
@@ -89,22 +131,6 @@ def process(request: UserRequest):
                 "response": f"Opening {app_name}",
                 "action": "open_app",
                 "app": app_name,
-            }
-
-        # 📞 CALL
-        if query.startswith("call"):
-            return {
-                "type": "command",
-                "response": "Opening dialer",
-                "action": "call",
-            }
-
-        # 💬 SMS
-        if "message" in query or "sms" in query:
-            return {
-                "type": "command",
-                "response": "Opening messages",
-                "action": "sms",
             }
 
         # 🤖 FALLBACK AI
