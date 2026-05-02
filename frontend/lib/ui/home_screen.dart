@@ -154,12 +154,12 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (action == "call") {
-      await _makeCall();
+      await _makeCall(app);
       return;
     }
 
     if (action == "sms") {
-      await _sendSMS();
+      await _sendSMS(app, null);
       return;
     }
   }
@@ -219,16 +219,40 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _makeCall() async {
-    await AndroidIntent(action: 'android.intent.action.DIAL').launch();
+  Future<void> _makeCall(String? number) async {
+  if (number != null && number.isNotEmpty) {
+    final uri = Uri.parse("tel:$number");
+    await launchUrl(uri);
+  } else {
+    await AndroidIntent(
+      action: 'android.intent.action.DIAL',
+    ).launch();
   }
+}
 
-  Future<void> _sendSMS() async {
+Future<void> sendWhatsApp(String number, String message) async {
+  final url = Uri.parse(
+    "https://wa.me/$number?text=${Uri.encodeComponent(message)}",
+  );
+
+  await launchUrl(url, mode: LaunchMode.externalApplication);
+}
+
+  Future<void> _sendSMS(String? number, String? message) async {
+  if (number != null && number.isNotEmpty) {
+    final uri = Uri.parse(
+      "sms:$number?body=${Uri.encodeComponent(message ?? "")}",
+    );
+
+    await launchUrl(uri);
+  } else {
+    // fallback (no number)
     await AndroidIntent(
       action: 'android.intent.action.SENDTO',
       data: 'smsto:',
     ).launch();
   }
+}
 
   Future<void> _trySystemIntent(String query) async {
     if (query.contains("settings")) {
