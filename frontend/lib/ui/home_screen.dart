@@ -21,8 +21,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _text = "Tap mic to start";
   bool isListening = false;
-  bool isSpeaking = false;
   bool isProcessing = false;
+
+  // 🔥 PRIORITY APPS
+  final Map<String, String> priorityApps = {
+    "google": "com.google.android.googlequicksearchbox",
+    "youtube": "com.google.android.youtube",
+    "playstore": "com.android.vending",
+    "play store": "com.android.vending",
+    "whatsapp": "com.whatsapp",
+    "chatgpt": "com.openai.chatgpt",
+    "clock": "com.google.android.deskclock",
+    "github": "com.github.android",
+    "hotstar": "in.startv.hotstar",
+    "gpay": "com.google.android.apps.nbu.paisa.user",
+    "google pay": "com.google.android.apps.nbu.paisa.user",
+  };
 
   @override
   void initState() {
@@ -51,10 +65,14 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // 🌐 API
+  String normalize(String text) {
+    return text.toLowerCase().trim();
+  }
+
+  // 🌐 API CALL
   Future<Map<String, dynamic>> _sendToBackend(String text) async {
-    final url = Uri.parse(
-        "https://running-dizziness-boasting.ngrok-free.dev/api/v1/process");
+    final url =
+        Uri.parse("https://jarivs-1.onrender.com/api/v1/process");
 
     try {
       final response = await http.post(
@@ -72,67 +90,122 @@ class _HomeScreenState extends State<HomeScreen> {
         return {"type": "text", "response": "Server error"};
       }
     } catch (e) {
-      print("❌ ERROR: $e");
       return {"type": "text", "response": "Connection failed"};
     }
   }
 
-  // 📞 CALL
-  Future<void> _makeCall(String name) async {
-    await AndroidIntent(action: 'android.intent.action.DIAL').launch();
+  // 🎤 MAIN FLOW
+  Future<void> _onSpeechResult(String result) async {
+    if (isProcessing) return;
+
+    isProcessing = true;
+
+    _stt.stopListening();
+
+    setState(() {
+      isListening = false;
+      _text = "You said: $result";
+    });
+
+    try {
+      final response = await _sendToBackend(result);
+
+      final message = response["response"];
+      final action = response["action"];
+      final app = response["app"];
+
+      setState(() {
+        _text = message ?? "No response";
+      });
+
+      await _tts.speak(message ?? "No response");
+
+      await _handleCommand(action, app, result);
+    } catch (e) {
+      print("❌ ERROR: $e");
+    }
+
+    isProcessing = false;
   }
 
-  // 💬 SMS
-  Future<void> _sendSMS(String name) async {
-    await AndroidIntent(
-      action: 'android.intent.action.SENDTO',
-      data: 'smsto:',
-    ).launch();
-  }
+  // ⚙️ COMMAND HANDLER
+  Future<void> _handleCommand(
+      String? action, String? app, String query) async {
+    if (action == null) return;
 
-  // ▶️ YOUTUBE
-  Future<void> _openYouTube() async {
-    final uri = Uri.parse("vnd.youtube://");
+    query = normalize(query);
+    app = app != null ? normalize(app) : null;
 
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    } else {
-      await launchUrl(
-        Uri.parse("https://www.youtube.com"),
-        mode: LaunchMode.externalApplication,
-      );
+    print("⚙️ Action: $action | App: $app");
+
+    // 🔥 PRIORITY FIRST
+    if (app != null && priorityApps.containsKey(app)) {
+      await DeviceApps.openApp(priorityApps[app]!);
+      return;
+    }
+
+    if (action == "open_youtube") {
+      await _openYouTube();
+      return;
+    }
+
+    if (action == "open_app" && app != null) {
+      final opened = await _smartAppOpen(app);
+
+      if (!opened) {
+        await _trySystemIntent(app);
+      }
+
+      return;
+    }
+
+    if (action == "call") {
+      await _makeCall();
+      return;
+    }
+
+    if (action == "sms") {
+      await _sendSMS();
+      return;
     }
   }
 
-  // 📱 NORMAL APPS
-  Future<bool> _tryOpenInstalledApp(String query) async {
+  // 🔥 SMART MATCHING
+  Future<bool> _smartAppOpen(String query) async {
     final apps = await DeviceApps.getInstalledApplications(
       onlyAppsWithLaunchIntent: true,
     );
 
-    // 🚫 BLOCK THESE APPS
-    final blocked = [
-      "google one",
-      "google photos",
-      "google pay",
-      "google play",
-    ];
+    query = normalize(query);
 
-    // ✅ EXACT MATCH FIRST
+    bool isBad(String name) {
+      if (query == "google" && name.contains("games")) return true;
+      if (query == "google" && name.contains("one")) return true;
+      return false;
+    }
+
+    // ✅ EXACT
     for (var app in apps) {
-      final name = app.appName.toLowerCase();
-      if (name == query && !blocked.contains(name)) {
-        print("🎯 Exact match: ${app.appName}");
+      final name = normalize(app.appName);
+      if (name == query && !isBad(name)) {
         await DeviceApps.openApp(app.packageName);
         return true;
       }
     }
 
-    // ✅ PARTIAL MATCH (FILTERED)
+    // ✅ STARTS WITH
     for (var app in apps) {
-      final name = app.appName.toLowerCase();
-      if (name.contains(query) && !blocked.contains(name)) {
-        print("📱 Match: ${app.appName}");
+      final name = normalize(app.appName);
+      if (name.startsWith(query) && !isBad(name)) {
+        await DeviceApps.openApp(app.packageName);
+        return true;
+      }
+    }
+
+    // ✅ CONTAINS
+    for (var app in apps) {
+      final name = normalize(app.appName);
+      if (name.contains(query) && !isBad(name)) {
         await DeviceApps.openApp(app.packageName);
         return true;
       }
@@ -141,11 +214,66 @@ class _HomeScreenState extends State<HomeScreen> {
     return false;
   }
 
-  // ⚙️ SYSTEM APPS
+  // ▶️ YOUTUBE
+  Future<void> _openYouTube() async {
+    const package = "com.google.android.youtube";
+
+    bool opened = await DeviceApps.openApp(package);
+
+    if (!opened) {
+      await launchUrl(
+        Uri.parse("https://www.youtube.com"),
+        mode: LaunchMode.externalApplication,
+      );
+    }
+  }
+
+  // 📞 CALL
+  Future<void> _makeCall() async {
+    await AndroidIntent(action: 'android.intent.action.DIAL').launch();
+  }
+
+  // 💬 SMS
+  Future<void> _sendSMS() async {
+    await AndroidIntent(
+      action: 'android.intent.action.SENDTO',
+      data: 'smsto:',
+    ).launch();
+  }
+
+  // 🔥 SYSTEM INTENTS (CRITICAL FIX)
   Future<void> _trySystemIntent(String query) async {
+    query = normalize(query);
+
+    if (query.contains("settings")) {
+      await AndroidIntent(
+        action: 'android.settings.SETTINGS',
+      ).launch();
+      return;
+    }
+
     if (query.contains("camera")) {
       await AndroidIntent(
         action: 'android.media.action.IMAGE_CAPTURE',
+      ).launch();
+      return;
+    }
+
+    if (query.contains("photos") || query.contains("gallery")) {
+  bool opened = await DeviceApps.openApp("com.google.android.apps.photos");
+
+  if (!opened) {
+    await launchUrl(
+      Uri.parse("content://media/external/images/media"),
+      mode: LaunchMode.externalApplication,
+    );
+  }
+  return;
+}
+
+    if (query.contains("recorder") || query.contains("voice")) {
+      await AndroidIntent(
+        action: 'android.provider.MediaStore.RECORD_SOUND',
       ).launch();
       return;
     }
@@ -154,16 +282,9 @@ class _HomeScreenState extends State<HomeScreen> {
       await AndroidIntent(
         action: 'android.intent.action.DIAL',
       ).launch();
+      return;
     }
   }
-
-    setState(() {
-      isSpeaking = false;
-    });
-
-    isProcessing = false;
-  }
-  
 
   @override
   Widget build(BuildContext context) {
