@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from app.models.request_model import UserRequest
 from app.providers.groq_provider import call_groq
+import re
 
 router = APIRouter()
 
@@ -38,11 +39,42 @@ def normalize_app_name(query: str):
     return None
 
 
+# 🔥 NEW: MESSAGE INTELLIGENCE
+def extract_message_command(query: str):
+    patterns = [
+        r"message (.+?) (.+)",
+        r"send message to (.+?) (.+)",
+        r"tell (.+?) (.+)",
+        r"sms (.+?) (.+)"
+    ]
+
+    for pattern in patterns:
+        match = re.match(pattern, query)
+        if match:
+            contact = match.group(1).strip()
+            message = match.group(2).strip()
+            return contact, message
+
+    return None, None
+
+
 @router.post("/process")
 def process(request: UserRequest):
     query = request.query.lower().strip()
 
     try:
+        # 🔥 MESSAGE INTELLIGENCE (ADDED FIRST)
+        contact, message = extract_message_command(query)
+
+        if contact and message:
+            return {
+                "type": "command",
+                "response": f"Sending message to {contact}",
+                "action": "sms",
+                "contact": contact,
+                "message": message,
+            }
+
         # 🔥 YOUTUBE SEARCH
         if "youtube" in query and "search" in query:
             search_query = (
@@ -82,7 +114,7 @@ def process(request: UserRequest):
                 "contact": name,
             }
 
-        # 📩 SMS BY NAME
+        # 📩 SMS (OLD STYLE STILL WORKS)
         if query.startswith("send sms"):
             parts = query.replace("send sms", "").strip().split(" ", 1)
 
