@@ -13,7 +13,12 @@ class TTSService {
   Future<void> speak(String text) async {
     if (text.isEmpty) return;
 
-    await _tts.stop(); // 🔥 important
+    await _tts.stop(); // 🔥 prevent overlap
     await _tts.speak(text);
+  }
+
+  // ✅ FIX ADDED HERE
+  Future<void> stop() async {
+    await _tts.stop();
   }
 }

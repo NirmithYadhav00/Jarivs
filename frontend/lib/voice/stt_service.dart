@@ -1,4 +1,3 @@
-// import 'package:flutter/foundation.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
 
@@ -13,7 +12,11 @@ class STTService {
     _isInitialized = await _speech.initialize(
       onStatus: (status) {
         print("STT Status: $status");
-        // ❌ NO AUTO RESTART
+
+        // 🔥 RESET LISTEN STATE CORRECTLY
+        if (status == "done" || status == "notListening") {
+          _isListening = false;
+        }
       },
       onError: (error) {
         _handleError(error);
@@ -23,20 +26,34 @@ class STTService {
 
   /// START LISTENING
   Future<void> startListening(void Function(String) onResult) async {
-    if (!_isInitialized || _isListening) return;
+    if (!_isInitialized) {
+      print("STT not initialized");
+      return;
+    }
 
-    _isListening = true;
+    if (_isListening) {
+      print("Already listening");
+      return;
+    }
 
     try {
+      _isListening = true;
+
       await _speech.listen(
         onResult: (result) {
+          print("USER SAID: ${result.recognizedWords}");
+
           if (result.finalResult) {
             onResult(result.recognizedWords);
           }
         },
+
+        // 🔥 KEY FIXES
         listenMode: ListenMode.confirmation,
-        pauseFor: const Duration(seconds: 2),
-        listenFor: const Duration(seconds: 10),
+        pauseFor: const Duration(seconds: 4),   // ⬅️ increased (IMPORTANT)
+        listenFor: const Duration(seconds: 15), // ⬅️ longer listening
+        partialResults: false,
+        cancelOnError: true,
       );
     } catch (e) {
       print("Listen crash: $e");
@@ -45,21 +62,24 @@ class STTService {
   }
 
   /// STOP LISTENING
-  void stopListening() {
-    if (_isListening) {
-      _speech.stop();
-      _isListening = false;
+  Future<void> stopListening() async {
+    if (_speech.isListening) {
+      await _speech.stop();
     }
+
+    _isListening = false;
   }
 
   /// ERROR HANDLING
   void _handleError(SpeechRecognitionError error) {
     final errorMsg = error.errorMsg;
 
+    print("STT Error: $errorMsg");
+
+    // ignore harmless errors
     if (errorMsg == 'error_no_match') return;
     if (errorMsg == 'error_busy') return;
 
     _isListening = false;
-    print("STT Error: $errorMsg");
   }
 }

@@ -41,11 +41,17 @@ def normalize_app_name(query: str):
 
 # 🔥 NEW: MESSAGE INTELLIGENCE
 def extract_message_command(query: str):
+    query = query.strip()
+
+    # 🔥 normalize spaces
+    query = re.sub(r"\s+", " ", query)
+
+    # patterns
     patterns = [
-        r"message (.+?) (.+)",
-        r"send message to (.+?) (.+)",
-        r"tell (.+?) (.+)",
-        r"sms (.+?) (.+)"
+        r"^message\s+(.+?)\s+(.+)$",
+        r"^send message to\s+(.+?)\s+(.+)$",
+        r"^tell\s+(.+?)\s+(.+)$",
+        r"^sms\s+(.+?)\s+(.+)$"
     ]
 
     for pattern in patterns:
@@ -56,7 +62,6 @@ def extract_message_command(query: str):
             return contact, message
 
     return None, None
-
 
 @router.post("/process")
 def process(request: UserRequest):

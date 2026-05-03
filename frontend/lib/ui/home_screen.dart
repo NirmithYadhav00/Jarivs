@@ -53,9 +53,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _toggleListening() async {
     if (isListening) {
-      _stt.stopListening();
+      await _stt.stopListening();
     } else {
-      _stt.startListening(_onSpeechResult);
+      await _tts.stop();
+      await _stt.startListening(_onSpeechResult);
     }
 
     setState(() {
@@ -63,12 +64,8 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  String normalize(String text) => text.toLowerCase().trim();
-
-  // 🌐 API
   Future<Map<String, dynamic>> _sendToBackend(String text) async {
-    final url =
-        Uri.parse("https://jarivs-1.onrender.com/api/v1/process");
+    final url = Uri.parse("https://jarivs-1.onrender.com/api/v1/process");
 
     try {
       final response = await http.post(
@@ -90,12 +87,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return {"type": "text", "response": "Connection failed"};
   }
 
-  // 🎤 MAIN FLOW
   Future<void> _onSpeechResult(String result) async {
     if (isProcessing) return;
 
     isProcessing = true;
-    _stt.stopListening();
+    await _stt.stopListening();
 
     setState(() {
       isListening = false;
@@ -121,7 +117,6 @@ class _HomeScreenState extends State<HomeScreen> {
     isProcessing = false;
   }
 
-  // 🔥 COMMAND HANDLER
   Future<void> _handleCommand(
       String? action, String? app, String? contact, String? message) async {
     if (action == null) return;
@@ -135,186 +130,70 @@ class _HomeScreenState extends State<HomeScreen> {
       case "open_youtube":
         await _openYouTube(app);
         break;
-
       case "open_app":
         if (app != null) await _openApp(app);
         break;
-
       case "call":
         await _call(contact);
         break;
-
       case "sms":
         await _sendSMS(contact, message);
         break;
-
       case "whatsapp_message":
         await _sendWhatsApp(contact, message);
         break;
-
       case "search_google":
         await _searchGoogle(app ?? "");
         break;
     }
   }
 
- Future<String?> _findContactNumber(String name) async {
-  await FlutterContacts.requestPermission();
-
-  final contacts = await FlutterContacts.getContacts(
-    withProperties: true,
-  );
-
-  name = name.toLowerCase().trim();
-
-  String clean(String s) =>
-      s.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
-
-  String input = clean(name);
-
-  // 🟢 1. EXACT RAW MATCH (HIGHEST PRIORITY)
-  for (var c in contacts) {
-    final display = c.displayName.toLowerCase();
-
-    if (display == name && c.phones.isNotEmpty) {
-      return c.phones.first.number;
-    }
-  }
-
-  // 🟢 2. EXACT CLEAN MATCH (no numbers)
-  for (var c in contacts) {
-    final display = clean(c.displayName);
-
-    if (display == input && c.phones.isNotEmpty) {
-      return c.phones.first.number;
-    }
-  }
-
-  // 🟡 3. WORD MATCH (prefer without numbers)
-  List<Map<String, dynamic>> matches = [];
-
-  for (var c in contacts) {
-    final displayRaw = c.displayName.toLowerCase();
-
-    final words = RegExp(r'[a-z]+')
-        .allMatches(displayRaw)
-        .map((e) => e.group(0)!)
-        .toList();
-
-    if (words.contains(input) && c.phones.isNotEmpty) {
-      matches.add({
-        "name": displayRaw,
-        "number": c.phones.first.number,
-      });
-    }
-  }
-
+  // ✅ CLEAN FINAL CONTACT MATCHING (ONLY ONE FUNCTION)
   Future<String?> _findContactNumber(String name) async {
-  await FlutterContacts.requestPermission();
+    await FlutterContacts.requestPermission();
 
-  final contacts = await FlutterContacts.getContacts(
-    withProperties: true,
-  );
+    final contacts =
+        await FlutterContacts.getContacts(withProperties: true);
 
-  // --- helpers ---
-  String clean(String s) =>
-      s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    String clean(String s) =>
+        s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
 
-  // split into base + number (if any)
-  (String base, String? num) split(String s) {
-    final c = clean(s);
-    final m = RegExp(r'^([a-z]+)(\d+)?$').firstMatch(c);
-    if (m != null) {
-      return (m.group(1) ?? '', m.group(2));
-    }
-    return (c, null);
-  }
-
-  final (inputBase, inputNum) = split(name);
-
-  // 1) STRICT MATCH: base + number (if user said a number)
-  for (var c in contacts) {
-    if (c.phones.isEmpty) continue;
-
-    final (base, num) = split(c.displayName);
-
-    if (inputNum != null) {
-      // user said "pappa2"
-      if (base == inputBase && num == inputNum) {
-        return c.phones.first.number;
+    (String base, String? num) split(String s) {
+      final c = clean(s);
+      final m = RegExp(r'^([a-z]+)(\d+)?$').firstMatch(c);
+      if (m != null) {
+        return (m.group(1) ?? '', m.group(2));
       }
+      return (c, null);
     }
-  }
 
-  // 2) STRICT MATCH: base only (user said "pappa" → ignore numbered ones)
-  if (inputNum == null) {
+    final (inputBase, inputNum) = split(name);
+
     for (var c in contacts) {
       if (c.phones.isEmpty) continue;
 
       final (base, num) = split(c.displayName);
 
-      if (base == inputBase && num == null) {
-        return c.phones.first.number;
-      }
-    }
-  }
-
-  // 3) Fallback: exact cleaned string (still deterministic)
-  final inputClean = clean(name);
-  for (var c in contacts) {
-    if (c.phones.isEmpty) continue;
-
-    if (clean(c.displayName) == inputClean) {
-      return c.phones.first.number;
-    }
-  }
-
-  return null;
-}
-
-  // 🔵 4. FUZZY MATCH (STRICT)
-  String? bestNumber;
-  int bestScore = 999;
-
-  for (var c in contacts) {
-    final display = clean(c.displayName);
-
-    int score = _levenshteinDistance(input, display);
-
-    if (score < bestScore && c.phones.isNotEmpty) {
-      bestScore = score;
-      bestNumber = c.phones.first.number;
-    }
-  }
-
-  if (bestScore <= 1) {
-    return bestNumber;
-  }
-
-  return null;
-}
-  int _levenshteinDistance(String s1, String s2) {
-    List<List<int>> dp = List.generate(
-      s1.length + 1,
-      (_) => List.filled(s2.length + 1, 0),
-    );
-
-    for (int i = 0; i <= s1.length; i++) dp[i][0] = i;
-    for (int j = 0; j <= s2.length; j++) dp[0][j] = j;
-
-    for (int i = 1; i <= s1.length; i++) {
-      for (int j = 1; j <= s2.length; j++) {
-        int cost = s1[i - 1] == s2[j - 1] ? 0 : 1;
-
-        dp[i][j] = [
-          dp[i - 1][j] + 1,
-          dp[i][j - 1] + 1,
-          dp[i - 1][j - 1] + cost
-        ].reduce((a, b) => a < b ? a : b);
+      if (inputNum != null) {
+        if (base == inputBase && num == inputNum) {
+          return c.phones.first.number;
+        }
       }
     }
 
-    return dp[s1.length][s2.length];
+    if (inputNum == null) {
+      for (var c in contacts) {
+        if (c.phones.isEmpty) continue;
+
+        final (base, num) = split(c.displayName);
+
+        if (base == inputBase && num == null) {
+          return c.phones.first.number;
+        }
+      }
+    }
+
+    return null;
   }
 
   Future<void> _call(String? name) async {
@@ -371,13 +250,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _openApp(String name) async {
     final apps = await DeviceApps.getInstalledApplications(
-      onlyAppsWithLaunchIntent: true,
-    );
+        onlyAppsWithLaunchIntent: true);
 
-    name = normalize(name);
+    name = name.toLowerCase();
 
     for (var app in apps) {
-      if (normalize(app.appName).contains(name)) {
+      if (app.appName.toLowerCase().contains(name)) {
         await DeviceApps.openApp(app.packageName);
         return;
       }
@@ -389,15 +267,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openSystemApp(String app) async {
     if (app.contains("settings")) {
       await AndroidIntent(action: 'android.settings.SETTINGS').launch();
-      return;
-    }
-
-    if (app.contains("contacts")) {
-      await AndroidIntent(
-        action: 'android.intent.action.VIEW',
-        type: 'vnd.android.cursor.dir/contact',
-      ).launch();
-      return;
     }
   }
 
