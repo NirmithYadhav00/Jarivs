@@ -40,29 +40,20 @@ def normalize_app_name(query: str):
 # 🔥 MESSAGE INTELLIGENCE
 def extract_message_command(query: str):
     query = query.strip().lower()
-    query = re.sub(r"\s+", " ", query)
 
-    patterns = [
-        r"^message\s+(.+?)\s+(.+)$",
-        r"^send message to\s+(.+?)\s+(.+)$",
-        r"^tell\s+(.+?)\s+(.+)$",
-        r"^sms\s+(.+?)\s+(.+)$"
-    ]
+    if query.startswith("whatsapp"):
+        parts = query.replace("whatsapp", "").strip().split(" ", 1)
+        return "whatsapp", parts[0], parts[1] if len(parts) > 1 else ""
 
-    for pattern in patterns:
-        match = re.match(pattern, query)
-        if match:
-            contact = match.group(1).strip()
-            message = match.group(2).strip()
-            return contact, message
+    if query.startswith("dm"):
+        parts = query.replace("dm", "").strip().split(" ", 1)
+        return "instagram", parts[0], parts[1] if len(parts) > 1 else ""
 
-    # 🔥 fallback
-    if query.startswith("message"):
-        parts = query.split(" ", 2)
-        if len(parts) >= 3:
-            return parts[1].strip(), parts[2].strip()
+    if query.startswith("message") or query.startswith("sms"):
+        parts = query.replace("message", "").replace("sms", "").strip().split(" ", 1)
+        return "sms", parts[0], parts[1] if len(parts) > 1 else ""
 
-    return None, None
+    return None, None, None
 
 
 @router.post("/process")
@@ -70,14 +61,15 @@ def process(request: UserRequest):
     query = request.query.lower().strip()
 
     try:
-        # 🔥 MESSAGE (FIRST PRIORITY)
-        contact, message = extract_message_command(query)
+        # 🔥 MESSAGE ROUTING (FIRST PRIORITY)
+        platform, contact, message = extract_message_command(query)
 
-        if contact and message:
+        if platform and contact:
             return {
                 "type": "command",
-                "response": f"Sending message to {contact}",
-                "action": "sms",
+                "response": f"Opening {platform} for {contact}",
+                "action": "send_message",
+                "platform": platform,
                 "contact": contact,
                 "message": message,
             }
@@ -136,7 +128,7 @@ def process(request: UserRequest):
                 "message": message,
             }
 
-        # 🟢 WHATSAPP
+        # 🟢 WHATSAPP (OLD STYLE)
         if query.startswith("send whatsapp"):
             parts = query.replace("send whatsapp", "").strip().split(" ", 1)
 

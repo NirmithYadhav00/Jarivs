@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:device_apps/device_apps.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:android_intent_plus/android_intent.dart';
+import 'package:telephony/telephony.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -215,21 +216,29 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _sendSMS(String? name, String? message) async {
-    if (name == null || name.isEmpty) return;
+ Future<void> _sendSMS(String? name, String? message) async {
+  if (name == null || name.isEmpty) return;
 
-    final number = await _findContactNumber(name);
+  final raw = await _findContactNumber(name);
 
-    if (number != null) {
-      final uri = Uri.parse(
-        "sms:$number?body=${Uri.encodeComponent(message ?? "")}",
-      );
-      await launchUrl(uri);
-    } else {
-      await _tts.speak("Contact not found");
-    }
+  if (raw != null) {
+    final number = _formatNumber(raw);
+
+    final intent = AndroidIntent(
+      action: 'android.intent.action.SENDTO',
+      data: 'smsto:$number',
+      arguments: {
+        'sms_body': message ?? '',
+      },
+    );
+
+    await intent.launch();
+
+    await _tts.speak("Message ready. Tap send.");
+  } else {
+    await _tts.speak("Contact not found");
   }
-
+}
   Future<void> _sendWhatsApp(String? name, String? message) async {
     if (name == null || name.isEmpty) return;
 
