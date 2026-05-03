@@ -19,7 +19,6 @@ APP_ALIASES = {
     "chatgpt": ["chatgpt", "chat gpt", "gpt"],
 }
 
-
 # 🔥 SMART APP MATCHING
 def normalize_app_name(query: str):
     query = f" {query} "
@@ -38,15 +37,11 @@ def normalize_app_name(query: str):
 
     return None
 
-
-# 🔥 NEW: MESSAGE INTELLIGENCE
+# 🔥 MESSAGE INTELLIGENCE
 def extract_message_command(query: str):
-    query = query.strip()
-
-    # 🔥 normalize spaces
+    query = query.strip().lower()
     query = re.sub(r"\s+", " ", query)
 
-    # patterns
     patterns = [
         r"^message\s+(.+?)\s+(.+)$",
         r"^send message to\s+(.+?)\s+(.+)$",
@@ -61,14 +56,21 @@ def extract_message_command(query: str):
             message = match.group(2).strip()
             return contact, message
 
+    # 🔥 fallback
+    if query.startswith("message"):
+        parts = query.split(" ", 2)
+        if len(parts) >= 3:
+            return parts[1].strip(), parts[2].strip()
+
     return None, None
+
 
 @router.post("/process")
 def process(request: UserRequest):
     query = request.query.lower().strip()
 
     try:
-        # 🔥 MESSAGE INTELLIGENCE (ADDED FIRST)
+        # 🔥 MESSAGE (FIRST PRIORITY)
         contact, message = extract_message_command(query)
 
         if contact and message:
@@ -108,7 +110,7 @@ def process(request: UserRequest):
                 "app": search_query,
             }
 
-        # 📞 CALL BY NAME
+        # 📞 CALL
         if query.startswith("call"):
             name = query.replace("call", "").strip()
 
@@ -119,7 +121,7 @@ def process(request: UserRequest):
                 "contact": name,
             }
 
-        # 📩 SMS (OLD STYLE STILL WORKS)
+        # 📩 SMS (OLD STYLE)
         if query.startswith("send sms"):
             parts = query.replace("send sms", "").strip().split(" ", 1)
 
@@ -134,7 +136,7 @@ def process(request: UserRequest):
                 "message": message,
             }
 
-        # 🟢 WHATSAPP MESSAGE
+        # 🟢 WHATSAPP
         if query.startswith("send whatsapp"):
             parts = query.replace("send whatsapp", "").strip().split(" ", 1)
 
