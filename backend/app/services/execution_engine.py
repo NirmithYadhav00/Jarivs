@@ -4,12 +4,10 @@ from difflib import get_close_matches
 from app.core.config import memory_service
 from app.core.config import topic_service
 from app.providers.groq_provider import call_groq
-from app.providers.huggingface_provider import HuggingFaceProvider
-from app.providers.together_provider import TogetherProvider
+
 from app.services.provider_selector import select_provider
 from app.utils.cache import get_cache, set_cache
 from app.utils.helpers import extract_valid_json, retry_request
-
 
 
 APP_CATEGORIES = {
@@ -19,13 +17,13 @@ APP_CATEGORIES = {
     "whatsapp": "messaging",
     "instagram": "social"
 }
+
+
 def suggest_alternative(app, installed_apps):
-    # 1. Try fuzzy match
     matches = get_close_matches(app, installed_apps, n=1, cutoff=0.5)
     if matches:
         return matches[0]
 
-    # 2. Try category-based match
     app_category = APP_CATEGORIES.get(app)
 
     if app_category:
@@ -33,12 +31,13 @@ def suggest_alternative(app, installed_apps):
             if APP_CATEGORIES.get(installed) == app_category:
                 return installed
 
-    # 3. fallback → first installed app
     if installed_apps:
         return installed_apps[0]
 
     return None
 
+
+# 🔥 CLEAN PROVIDER CALL (ONLY GROQ FOR NOW)
 def call_provider(provider_name, prompt):
     def run():
         print(f"[RUNNING] {provider_name}")
@@ -47,11 +46,6 @@ def call_provider(provider_name, prompt):
             result = call_groq(prompt)
             print(f"[GROQ RAW]: {result}")
             return result
-
-        if provider_name == "together":
-            result = TogetherProvider().generate(prompt)
-            print(f"[TOGETHER RAW]: {result}")
-            return result["choices"][0]["message"]["content"]
 
         raise ValueError(f"Unknown provider: {provider_name}")
 
@@ -62,15 +56,7 @@ def call_provider(provider_name, prompt):
     except Exception as e:
         print(f"[ERROR] {provider_name}: {e}")
 
-        try:
-            print("[FALLBACK] HuggingFace")
-            result = HuggingFaceProvider().generate(prompt)
-            print(f"[HF RAW]: {result}")
-            return result
-
-        except Exception as hf_error:
-            print(f"[HF ERROR]: {hf_error}")
-            return '{"responses":[{"title":"Error","content":"All AI providers failed"}]}'
+        return '{"responses":[{"title":"Error","content":"AI provider failed"}]}'
 
 
 def build_prompt_with_memory(memory, current_query, latest_query, current_topic):
@@ -114,7 +100,6 @@ def execute_tasks(
     installed_apps = installed_apps or []
     installed_apps_lower = [app.lower() for app in installed_apps]
 
-    # Handle tasks
     for task in tasks:
         if task["type"] == "command":
             app = task.get("app", "").lower()
@@ -146,7 +131,6 @@ def execute_tasks(
 
     parsed_responses = []
 
-    # Process AI tasks
     for intent, queries in intent_groups.items():
         provider = select_provider(intent)
 
@@ -191,7 +175,9 @@ User queries:
             latest_query,
             current_topic,
         )
+
         topic_service.update_topic(user_id, latest_query)
+
         cache_key = f"{provider}:{enhanced_prompt}"
         cached = get_cache(cache_key)
 
@@ -225,7 +211,6 @@ User queries:
                 }
             )
 
-    # Store memory
     if parsed_responses:
         final_text = " ".join(
             item["content"] for item in parsed_responses if item.get("content")

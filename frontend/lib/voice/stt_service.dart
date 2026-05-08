@@ -26,15 +26,7 @@ class STTService {
 
   /// START LISTENING
   Future<void> startListening(void Function(String) onResult) async {
-    if (!_isInitialized) {
-      print("STT not initialized");
-      return;
-    }
-
-    if (_isListening) {
-      print("Already listening");
-      return;
-    }
+    if (!_isInitialized || _isListening) return;
 
     try {
       _isListening = true;
@@ -43,17 +35,19 @@ class STTService {
         onResult: (result) {
           print("USER SAID: ${result.recognizedWords}");
 
-          if (result.finalResult) {
+          // ✅ ONLY FINAL RESULT
+          if (result.finalResult && result.recognizedWords.isNotEmpty) {
             onResult(result.recognizedWords);
           }
         },
 
-        // 🔥 KEY FIXES
-        listenMode: ListenMode.confirmation,
-        pauseFor: const Duration(seconds: 4),   // ⬅️ increased (IMPORTANT)
-        listenFor: const Duration(seconds: 15), // ⬅️ longer listening
-        partialResults: false,
-        cancelOnError: true,
+        listenMode: ListenMode.dictation,
+        partialResults: true,
+
+        // ⚡ SPEED OPTIMIZED
+        listenFor: const Duration(seconds: 10),
+        pauseFor: const Duration(seconds: 2),
+        cancelOnError: false,
       );
     } catch (e) {
       print("Listen crash: $e");
