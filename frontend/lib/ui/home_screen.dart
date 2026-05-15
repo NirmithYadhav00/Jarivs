@@ -315,11 +315,13 @@ class _HomeScreenState extends State<HomeScreen> {
           );
           break;
 
-        case "open_app":
-          if (app != null) {
-            await _openApp(app);
-          }
-          break;
+        
+    case "open_app":
+    if (app != null) {
+    await _openSystemApp(app);
+    }
+      break;
+
 
         case "open_youtube":
           await _openYouTube(app);
@@ -574,6 +576,77 @@ class _HomeScreenState extends State<HomeScreen> {
 
     await _tts.speak("$name app not found");
   }
+Future<void> _openSystemApp(String app) async {
+  try {
+
+    print("===== OPEN SYSTEM APP =====");
+    print(app);
+
+    switch (app.toLowerCase()) {
+
+      case "settings":
+
+        await AndroidIntent(
+          action: 'android.settings.SETTINGS',
+        ).launch();
+
+        return;
+
+      case "contacts":
+
+        await AndroidIntent(
+          action: 'android.intent.action.VIEW',
+          data: 'content://contacts/people/',
+        ).launch();
+
+        return;
+
+      case "camera":
+
+        await AndroidIntent(
+          action: 'android.media.action.IMAGE_CAPTURE',
+        ).launch();
+
+        return;
+
+      case "phone":
+
+        await AndroidIntent(
+          action: 'android.intent.action.DIAL',
+        ).launch();
+
+        return;
+
+      case "messages":
+
+        await AndroidIntent(
+          action: 'android.intent.action.MAIN',
+          package: 'com.google.android.apps.messaging',
+        ).launch();
+
+        return;
+
+      case "clock":
+
+        await AndroidIntent(
+          action: 'android.intent.action.SHOW_ALARMS',
+        ).launch();
+
+        return;
+
+      default:
+
+        await _openApp(app);
+    }
+
+  } catch (e) {
+
+    print("SYSTEM APP ERROR: $e");
+
+    await _tts.speak("Unable to open $app");
+  }
+}
+
 
   Future<void> _openYouTube([String? query]) async {
     try {

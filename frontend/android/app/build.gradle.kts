@@ -11,7 +11,7 @@ android {
     namespace = "com.example.frontend"
 
     // FIXED SDK VERSION
-    compileSdk = 34
+    compileSdk = 36
 
     ndkVersion = flutter.ndkVersion
 
@@ -34,7 +34,7 @@ android {
         minSdk = flutter.minSdkVersion
 
         // FIXED TARGET SDK
-        targetSdk = 34
+        targetSdk = 36
 
         versionCode = flutter.versionCode
         versionName = flutter.versionName
