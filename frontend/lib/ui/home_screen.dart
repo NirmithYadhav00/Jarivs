@@ -84,38 +84,76 @@ class _HomeScreenState extends State<HomeScreen> {
     await Permission.sms.request();
   }
 
-  Future<void> _toggleListening() async {
-    try {
-      if (!isListening) {
-        await _stt.startListening(_onSpeechResult);
 
-        if (!mounted) return;
+Future<void> _toggleListening() async {
 
-        setState(() {
-          isListening = true;
-          _text = "Listening...";
-        });
-      } else {
-        await _stt.stopListening();
+  try {
 
-        if (!mounted) return;
+    // 🔥 INTERRUPT SPEAKING
+    if (_tts.isSpeaking) {
 
-        setState(() {
-          isListening = false;
-          _text = "Stopped listening";
-        });
-      }
-    } catch (e) {
-      print("TOGGLE ERROR: $e");
+      print("===== INTERRUPT TTS =====");
+
+      await _tts.stop();
+
+      isProcessing = false;
+
+      await Future.delayed(
+        const Duration(milliseconds: 300),
+      );
+
+      await _stt.startListening(_onSpeechResult);
+
+      if (!mounted) return;
+
+      setState(() {
+
+        isListening = true;
+
+        _text = "Listening...";
+      });
+
+      return;
     }
-  }
-  
-  Future<void> _onSpeechResult(String result) async {
-   
-   if (result.trim().split(" ").length < 3) {
-     return;
-      }
 
+    // 🔥 NORMAL START
+    if (!isListening) {
+
+      await _stt.startListening(_onSpeechResult);
+
+      if (!mounted) return;
+
+      setState(() {
+
+        isListening = true;
+
+        _text = "Listening...";
+      });
+
+    } else {
+
+      // 🔥 STOP LISTENING
+      await _stt.stopListening();
+
+      if (!mounted) return;
+
+      setState(() {
+
+        isListening = false;
+
+        _text = "Stopped listening";
+      });
+    }
+
+  } catch (e) {
+
+    print("TOGGLE ERROR: $e");
+  }
+}
+
+
+
+  Future<void> _onSpeechResult(String result) async {
     try {
       print("===== RAW SPEECH =====");
       print(result);
@@ -127,9 +165,15 @@ class _HomeScreenState extends State<HomeScreen> {
       print("===== CLEAN SPEECH =====");
       print(result);
 
-      if (result.isEmpty || result.length < 2) return;
+      // ignore invalid speech
+      if (result.isEmpty || result.length < 3) {
+        return;
+      }
 
-      if (result == lastCommand) return;
+      // ignore duplicate command
+      if (result == lastCommand) {
+        return;
+      }
 
       lastCommand = result;
 
@@ -140,9 +184,16 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         setState(() {
           isListening = false;
+
           _text = "You said: $result";
         });
       }
+
+      // 🔥 INSTANT FEEDBACK
+      await _tts.speak("Thinking");
+
+      print("===== API REQUEST =====");
+      print(result);
 
       final response = await _sendToBackend(result);
 
@@ -161,27 +212,34 @@ class _HomeScreenState extends State<HomeScreen> {
           if (item is! Map<String, dynamic>) continue;
 
           if (item["type"] == "text") {
-            if (item["responses"] is List &&
-                item["responses"].isNotEmpty) {
-              message =
-                  item["responses"][0]["content"]?.toString();
+            if (item["responses"] is List && item["responses"].isNotEmpty) {
+              message = item["responses"][0]["content"]?.toString();
             }
           }
 
           if (item["type"] == "command") {
             action = item["action"]?.toString();
+
             app = item["app"]?.toString();
+
             contact = item["contact"]?.toString();
+
             msg = item["message"]?.toString();
+
             platform = item["platform"]?.toString();
           }
         }
       } else if (response is Map<String, dynamic>) {
         message = response["response"]?.toString();
+
         action = response["action"]?.toString();
+
         app = response["app"]?.toString();
+
         contact = response["contact"]?.toString();
+
         msg = response["message"]?.toString();
+
         platform = response["platform"]?.toString();
       }
 
@@ -197,39 +255,32 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
 
+      // 🔥 SPEAK FINAL ANSWER
       if (message != null && message.isNotEmpty) {
         await _tts.speak(message);
       }
 
-      await _handleCommand(
-        action,
-        app,
-        contact,
-        msg,
-        platform,
-      );
+      // 🔥 HANDLE COMMANDS
+      await _handleCommand(action, app, contact, msg, platform);
 
       isProcessing = false;
 
-while (_tts.isSpeaking) {
+      // 🔥 WAIT UNTIL TTS FINISHES
+      while (_tts.isSpeaking) {
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
 
-  await Future.delayed(
-    const Duration(milliseconds: 300),
-  );
-}
+      // 🔥 SMALL NATURAL DELAY
+      await Future.delayed(const Duration(milliseconds: 500));
 
-await Future.delayed(
-  const Duration(milliseconds: 700),
-);
+      print("===== RESTART LISTENING =====");
 
-print("===== RESTART LISTENING =====");
-
-await _stt.startListening(_onSpeechResult);
-
+      await _stt.startListening(_onSpeechResult);
 
       if (mounted) {
         setState(() {
           isListening = true;
+
           _text = "Listening...";
         });
       }
@@ -246,16 +297,9 @@ await _stt.startListening(_onSpeechResult);
       print(text);
 
       final response = await http.post(
-        Uri.parse(
-          "https://jarivs-1.onrender.com/api/v1/process",
-        ),
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: jsonEncode({
-          "user_id": "mobile_user",
-          "query": text,
-        }),
+        Uri.parse("https://jarivs-1.onrender.com/api/v1/process"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"user_id": "mobile_user", "query": text}),
       );
 
       print("===== STATUS CODE =====");
@@ -323,20 +367,14 @@ await _stt.startListening(_onSpeechResult);
           break;
 
         case "send_message":
-          await _handleMessagingPlatform(
-            contact,
-            message,
-            platform,
-          );
+          await _handleMessagingPlatform(contact, message, platform);
           break;
 
-        
-    case "open_app":
-    if (app != null) {
-    await _openSystemApp(app);
-    }
-      break;
-
+        case "open_app":
+          if (app != null) {
+            await _openSystemApp(app);
+          }
+          break;
 
         case "open_youtube":
           await _openYouTube(app);
@@ -368,14 +406,10 @@ await _stt.startListening(_onSpeechResult);
     }
   }
 
-  Future<Map<String, dynamic>?> _findContactNumber(
-    String name,
-  ) async {
+  Future<Map<String, dynamic>?> _findContactNumber(String name) async {
     await FlutterContacts.requestPermission();
 
-    final contacts = await FlutterContacts.getContacts(
-      withProperties: true,
-    );
+    final contacts = await FlutterContacts.getContacts(withProperties: true);
 
     String clean(String s) {
       return s
@@ -397,11 +431,9 @@ await _stt.startListening(_onSpeechResult);
 
       final rawName = contact.displayName.toLowerCase();
 
-      final bracketMatch =
-          RegExp(r'\((.*?)\)').firstMatch(rawName);
+      final bracketMatch = RegExp(r'\((.*?)\)').firstMatch(rawName);
 
-      String alias =
-          bracketMatch != null ? bracketMatch.group(1)! : "";
+      String alias = bracketMatch != null ? bracketMatch.group(1)! : "";
 
       final combined = clean("$rawName $alias");
 
@@ -416,33 +448,21 @@ await _stt.startListening(_onSpeechResult);
       }
 
       if (combined.split(" ").contains(input)) {
-        matches.add({
-          "name": contact.displayName,
-          "number": number,
-        });
+        matches.add({"name": contact.displayName, "number": number});
 
         continue;
       }
 
       if (combined.contains(input)) {
-        matches.add({
-          "name": contact.displayName,
-          "number": number,
-        });
+        matches.add({"name": contact.displayName, "number": number});
 
         continue;
       }
 
-      double sim = StringSimilarity.compareTwoStrings(
-        input,
-        combined,
-      );
+      double sim = StringSimilarity.compareTwoStrings(input, combined);
 
       if (sim > 0.5) {
-        matches.add({
-          "name": contact.displayName,
-          "number": number,
-        });
+        matches.add({"name": contact.displayName, "number": number});
       }
     }
 
@@ -458,10 +478,7 @@ await _stt.startListening(_onSpeechResult);
       };
     }
 
-    return {
-      "type": "multiple",
-      "matches": matches,
-    };
+    return {"type": "multiple", "matches": matches};
   }
 
   Future<void> _call(String? name) async {
@@ -497,10 +514,7 @@ await _stt.startListening(_onSpeechResult);
     await intent.launch();
   }
 
-  Future<void> _sendSMS(
-    String? name,
-    String? message,
-  ) async {
+  Future<void> _sendSMS(String? name, String? message) async {
     if (name == null || name.isEmpty) return;
 
     final result = await _findContactNumber(name);
@@ -525,18 +539,13 @@ await _stt.startListening(_onSpeechResult);
     final intent = AndroidIntent(
       action: 'android.intent.action.SENDTO',
       data: 'smsto:$number',
-      arguments: {
-        'sms_body': message ?? '',
-      },
+      arguments: {'sms_body': message ?? ''},
     );
 
     await intent.launch();
   }
 
-  Future<void> _sendWhatsApp(
-    String? name,
-    String? message,
-  ) async {
+  Future<void> _sendWhatsApp(String? name, String? message) async {
     if (name == null || name.isEmpty) return;
 
     final result = await _findContactNumber(name);
@@ -568,22 +577,16 @@ await _stt.startListening(_onSpeechResult);
       "https://wa.me/$number?text=${Uri.encodeComponent(message ?? "")}",
     );
 
-    await launchUrl(
-      url,
-      mode: LaunchMode.externalApplication,
-    );
+    await launchUrl(url, mode: LaunchMode.externalApplication);
   }
 
   Future<void> _openApp(String name) async {
-    final apps =
-        await DeviceApps.getInstalledApplications(
+    final apps = await DeviceApps.getInstalledApplications(
       onlyAppsWithLaunchIntent: true,
     );
 
     for (var app in apps) {
-      if (app.appName
-          .toLowerCase()
-          .contains(name.toLowerCase())) {
+      if (app.appName.toLowerCase().contains(name.toLowerCase())) {
         await DeviceApps.openApp(app.packageName);
         return;
       }
@@ -591,77 +594,62 @@ await _stt.startListening(_onSpeechResult);
 
     await _tts.speak("$name app not found");
   }
-Future<void> _openSystemApp(String app) async {
-  try {
 
-    print("===== OPEN SYSTEM APP =====");
-    print(app);
+  Future<void> _openSystemApp(String app) async {
+    try {
+      print("===== OPEN SYSTEM APP =====");
+      print(app);
 
-    switch (app.toLowerCase()) {
+      switch (app.toLowerCase()) {
+        case "settings":
+          await AndroidIntent(action: 'android.settings.SETTINGS').launch();
 
-      case "settings":
+          return;
 
-        await AndroidIntent(
-          action: 'android.settings.SETTINGS',
-        ).launch();
+        case "contacts":
+          await AndroidIntent(
+            action: 'android.intent.action.VIEW',
+            data: 'content://contacts/people/',
+          ).launch();
 
-        return;
+          return;
 
-      case "contacts":
+        case "camera":
+          await AndroidIntent(
+            action: 'android.media.action.IMAGE_CAPTURE',
+          ).launch();
 
-        await AndroidIntent(
-          action: 'android.intent.action.VIEW',
-          data: 'content://contacts/people/',
-        ).launch();
+          return;
 
-        return;
+        case "phone":
+          await AndroidIntent(action: 'android.intent.action.DIAL').launch();
 
-      case "camera":
+          return;
 
-        await AndroidIntent(
-          action: 'android.media.action.IMAGE_CAPTURE',
-        ).launch();
+        case "messages":
+          await AndroidIntent(
+            action: 'android.intent.action.MAIN',
+            package: 'com.google.android.apps.messaging',
+          ).launch();
 
-        return;
+          return;
 
-      case "phone":
+        case "clock":
+          await AndroidIntent(
+            action: 'android.intent.action.SHOW_ALARMS',
+          ).launch();
 
-        await AndroidIntent(
-          action: 'android.intent.action.DIAL',
-        ).launch();
+          return;
 
-        return;
+        default:
+          await _openApp(app);
+      }
+    } catch (e) {
+      print("SYSTEM APP ERROR: $e");
 
-      case "messages":
-
-        await AndroidIntent(
-          action: 'android.intent.action.MAIN',
-          package: 'com.google.android.apps.messaging',
-        ).launch();
-
-        return;
-
-      case "clock":
-
-        await AndroidIntent(
-          action: 'android.intent.action.SHOW_ALARMS',
-        ).launch();
-
-        return;
-
-      default:
-
-        await _openApp(app);
+      await _tts.speak("Unable to open $app");
     }
-
-  } catch (e) {
-
-    print("SYSTEM APP ERROR: $e");
-
-    await _tts.speak("Unable to open $app");
   }
-}
-
 
   Future<void> _openYouTube([String? query]) async {
     try {
@@ -670,14 +658,9 @@ Future<void> _openSystemApp(String app) async {
           "https://www.youtube.com/results?search_query=${Uri.encodeComponent(query)}",
         );
 
-        await launchUrl(
-          url,
-          mode: LaunchMode.externalApplication,
-        );
+        await launchUrl(url, mode: LaunchMode.externalApplication);
       } else {
-        await DeviceApps.openApp(
-          "com.google.android.youtube",
-        );
+        await DeviceApps.openApp("com.google.android.youtube");
       }
     } catch (e) {
       print("YOUTUBE ERROR: $e");
@@ -689,27 +672,19 @@ Future<void> _openSystemApp(String app) async {
       "https://www.google.com/search?q=${Uri.encodeComponent(query)}",
     );
 
-    await launchUrl(
-      url,
-      mode: LaunchMode.externalApplication,
-    );
+    await launchUrl(url, mode: LaunchMode.externalApplication);
   }
 
   String _formatNumber(String raw) {
-    String number =
-        raw.replaceAll(RegExp(r'\s+'), '');
+    String number = raw.replaceAll(RegExp(r'\s+'), '');
 
-    number = number.replaceAll(
-      RegExp(r'[^\d+]'),
-      '',
-    );
+    number = number.replaceAll(RegExp(r'[^\d+]'), '');
 
     if (number.startsWith("+91")) {
       return number;
     }
 
-    if (number.startsWith("91") &&
-        number.length == 12) {
+    if (number.startsWith("91") && number.length == 12) {
       return "+$number";
     }
 
@@ -738,24 +713,15 @@ Future<void> _openSystemApp(String app) async {
           child: Text(
             _text,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-            ),
+            style: const TextStyle(color: Colors.white, fontSize: 22),
           ),
         ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _toggleListening,
-        backgroundColor:
-            isListening ? Colors.red : Colors.blue,
-        child: Icon(
-          isListening
-              ? Icons.mic
-              : Icons.mic_none,
-        ),
+        backgroundColor: isListening ? Colors.red : Colors.blue,
+        child: Icon(isListening ? Icons.mic : Icons.mic_none),
       ),
     );
   }
 }
-

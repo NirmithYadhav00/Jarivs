@@ -1,44 +1,86 @@
 def classify_intent(query: str) -> str:
+
     print("[INTENT INPUT]:", query)
 
     q = query.lower().strip()
 
-    # 🔥 COMMAND KEYWORDS (IMPORTANT — EXPANDED)
+    # 🔥 COMMAND KEYWORDS
     COMMAND_KEYWORDS = [
-        "open", "launch", "start",
-        "call", "dial",
-        "message", "sms",
-        "whatsapp", "send"
+        "open",
+        "launch",
+        "start",
+        "call",
+        "dial",
+        "message",
+        "sms",
+        "whatsapp",
+        "send",
+        "play",
+        "close"
     ]
 
-    # 🔥 REAL-TIME
+    # 🌐 REALTIME KEYWORDS
     REAL_TIME_KEYWORDS = [
-        "weather", "news", "price", "time", "temperature",
-        "today", "now", "latest", "current", "update",
-        "score", "live", "stock", "market", "value"
+        "weather",
+        "news",
+        "price",
+        "time",
+        "temperature",
+        "today",
+        "now",
+        "latest",
+        "current",
+        "update",
+        "score",
+        "live",
+        "stock",
+        "market",
+        "value",
+        "who won",
+        "traffic",
+        "bitcoin",
+        "ipl"
     ]
 
-    # 🔧 CODING
+    # 🔧 CODING KEYWORDS
     CODING_KEYWORDS = [
-        "code", "debug", "error", "python", "api",
-        "recursion", "function", "bug", "algorithm"
+        "code",
+        "debug",
+        "error",
+        "python",
+        "flutter",
+        "fastapi",
+        "api",
+        "recursion",
+        "function",
+        "bug",
+        "algorithm",
+        "programming",
+        "developer"
     ]
 
-    # 🔥 PRIORITY 1 → COMMAND (VERY IMPORTANT)
+    # 🔥 PRIORITY 1 → COMMAND
     if any(q.startswith(cmd) for cmd in COMMAND_KEYWORDS):
+
         print("[INTENT OUTPUT]: command")
+
         return "command"
 
-    # 🔥 PRIORITY 2 → REAL-TIME
+    # 🌐 PRIORITY 2 → REALTIME
     if any(word in q for word in REAL_TIME_KEYWORDS):
+
         print("[INTENT OUTPUT]: real_time")
+
         return "real_time"
 
-    # 🔥 PRIORITY 3 → CODING
+    # 🔧 PRIORITY 3 → CODING
     if any(word in q for word in CODING_KEYWORDS):
+
         print("[INTENT OUTPUT]: coding")
+
         return "coding"
 
     # 🧠 DEFAULT
     print("[INTENT OUTPUT]: general")
+
     return "general"

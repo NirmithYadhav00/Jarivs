@@ -32,12 +32,44 @@ class STTService {
       _isListening = true;
 
       await _speech.listen(
-        onResult: (result) {
-          print("USER SAID: ${result.recognizedWords}");
+  onResult: (result) {
 
-          // ✅ ONLY FINAL RESULT
-          if (result.finalResult && result.recognizedWords.isNotEmpty && result.recognizedWords.trim().split(" ").length >= 3) { onResult(result.recognizedWords); }
-        },
+  final text = result.recognizedWords
+      .trim()
+      .toLowerCase();
+
+  print("USER SAID: $text");
+
+  final wordCount = text
+      .split(RegExp(r'\s+'))
+      .length;
+
+  // ignore empty
+  if (text.isEmpty) {
+    return;
+  }
+
+  // ignore incomplete speech
+  if (wordCount < 3) {
+    return;
+  }
+
+  // ignore broken partial finals
+  if (text == "what is" ||
+      text == "open" ||
+      text == "search" ||
+      text == "call") {
+    return;
+  }
+
+  // ONLY final stable result
+  if (result.finalResult) {
+
+    print("FINAL SPEECH: $text");
+
+    onResult(text);
+  }
+},
 
         listenMode: ListenMode.dictation,
         partialResults: false,

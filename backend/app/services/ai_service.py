@@ -1,35 +1,49 @@
 from app.providers.groq_provider import call_groq
 from app.providers.github_provider import call_github
+
 from app.services.intent_classifier import classify_intent
+from app.services.realtime_service import realtime_response
 
 
 def handle_ai(query: str):
+
     intent = classify_intent(query)
 
     print("[INTENT]:", intent)
 
     try:
-        # 🔧 CODING → GitHub (DeepSeek/OpenAI)
+
+        # 🔧 Coding Tasks
         if intent == "coding":
+
             print("[PROVIDER]: github (coding)")
+
             return call_github(query, intent="coding")
 
-        # 🧠 GENERAL → Groq
-        if intent == "general":
+        # 🌐 Realtime Queries
+        elif intent == "real_time":
+
+            print("[PROVIDER]: realtime pipeline")
+
+            return realtime_response(query)
+
+        # 🧠 General Assistant
+        elif intent == "general":
+
             print("[PROVIDER]: groq")
+
             return call_groq(query)
 
-        # 🌐 REAL-TIME → GitHub (for now)
-        if intent == "real_time":
-            print("[PROVIDER]: github (real-time)")
-            return call_github(query)
+        # 🔥 Fallback
+        print("[PROVIDER]: fallback → groq")
 
-        # 🔥 DEFAULT FALLBACK
-        print("[PROVIDER]: fallback → github")
-        return call_github(query)
+        return call_groq(query)
 
-    except Exception as e:
-        print("[AI ERROR]:", e)
+    except Exception:
+
+        import traceback
+
+        print(traceback.format_exc())
 
         return {
             "type": "text",

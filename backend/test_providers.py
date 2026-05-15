@@ -1,5 +1,6 @@
 from app.providers.groq_provider import call_groq
 from app.providers.github_provider import call_github
+from providers.gemini_provider import generate_response
 
 
 def test_groq():
