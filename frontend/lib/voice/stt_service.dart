@@ -36,17 +36,15 @@ class STTService {
           print("USER SAID: ${result.recognizedWords}");
 
           // ✅ ONLY FINAL RESULT
-          if (result.finalResult && result.recognizedWords.isNotEmpty) {
-            onResult(result.recognizedWords);
-          }
+          if (result.finalResult && result.recognizedWords.isNotEmpty && result.recognizedWords.trim().split(" ").length >= 3) { onResult(result.recognizedWords); }
         },
 
         listenMode: ListenMode.dictation,
-        partialResults: true,
+        partialResults: false,
 
         // ⚡ SPEED OPTIMIZED
-        listenFor: const Duration(seconds: 10),
-        pauseFor: const Duration(seconds: 2),
+        listenFor: const Duration(seconds: 6),
+        pauseFor: const Duration(milliseconds: 1200),
         cancelOnError: false,
       );
     } catch (e) {

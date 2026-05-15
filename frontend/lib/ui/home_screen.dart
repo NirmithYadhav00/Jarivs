@@ -109,8 +109,13 @@ class _HomeScreenState extends State<HomeScreen> {
       print("TOGGLE ERROR: $e");
     }
   }
-
+  
   Future<void> _onSpeechResult(String result) async {
+   
+   if (result.trim().split(" ").length < 3) {
+     return;
+      }
+
     try {
       print("===== RAW SPEECH =====");
       print(result);
@@ -206,11 +211,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
       isProcessing = false;
 
-      await Future.delayed(const Duration(seconds: 1));
+while (_tts.isSpeaking) {
 
-      print("===== RESTART LISTENING =====");
+  await Future.delayed(
+    const Duration(milliseconds: 300),
+  );
+}
 
-      await _stt.startListening(_onSpeechResult);
+await Future.delayed(
+  const Duration(milliseconds: 700),
+);
+
+print("===== RESTART LISTENING =====");
+
+await _stt.startListening(_onSpeechResult);
+
 
       if (mounted) {
         setState(() {
