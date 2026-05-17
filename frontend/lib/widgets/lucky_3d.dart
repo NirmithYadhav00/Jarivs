@@ -1,31 +1,61 @@
 import 'package:flutter/material.dart';
 import 'package:model_viewer_plus/model_viewer_plus.dart';
+import '../models/lucky_state.dart';
 
 class Lucky3D extends StatelessWidget {
-  const Lucky3D({super.key});
+  final LuckyState state;
+
+  const Lucky3D({
+    super.key,
+    required this.state,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox(
-      width: 350,
-      height: 350,
+    double scale = 1;
 
-      child: ModelViewer(
-        src: 'assets/models/hatsune_miku.glb',
+    // Slight pulse while talking
+    if (state == LuckyState.talking) {
+      scale = 1.08;
+    }
 
-        autoRotate: false,
-        cameraControls: false,
+    // Tiny scale while listening
+    if (state == LuckyState.listening) {
+      scale = 1.03;
+    }
 
-        interactionPrompt:
-            InteractionPrompt.none,
+    return Center(
+      child: AnimatedScale(
+        duration: const Duration(
+          milliseconds: 400,
+        ),
 
-        disableZoom: true,
-        disablePan: true,
+        scale: scale,
 
-        autoPlay: true,
+        child: const SizedBox(
+          width: 280,
+          height: 280,
 
-        backgroundColor:
-            Colors.transparent,
+          child: ModelViewer(
+            src: 'assets/models/hatsune_miku.glb',
+
+            interactionPrompt:
+                InteractionPrompt.none,
+
+            cameraControls: false,
+
+            disableZoom: true,
+
+            disablePan: true,
+
+            autoRotate: false,
+
+            autoPlay: true,
+
+            backgroundColor:
+                Colors.transparent,
+          ),
+        ),
       ),
     );
   }

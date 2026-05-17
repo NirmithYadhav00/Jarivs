@@ -10,6 +10,7 @@ import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:string_similarity/string_similarity.dart';
 import '../widgets/lucky_3d.dart';
+import '../models/lucky_state.dart';
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -28,6 +29,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String lastCommand = "";
   String? lastContact = "";
+  LuckyState currentState =
+    LuckyState.idle;
 
   final Map<String, String> priorityApps = {
     "google": "com.google.android.googlequicksearchbox",
@@ -39,15 +42,21 @@ class _HomeScreenState extends State<HomeScreen> {
     "gpay": "com.google.android.apps.nbu.paisa.user",
   };
 
-  @override
-  void initState() {
-    super.initState();
+ bool _initialized=false;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
+@override
+void initState() {
+  super.initState();
+
+  if(!_initialized){
+
+    _initialized=true;
+
+    Future.microtask(() async{
       await _initApp();
     });
   }
-
+}
   Future<void> _initApp() async {
     try {
       print("===== INIT APP =====");
@@ -68,10 +77,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (!mounted) return;
 
-      setState(() {
-        isListening = true;
-        _text = "Listening...";
-      });
+     setState(() {
+
+  isListening = true;
+
+  currentState =
+      LuckyState.listening;
+
+  _text = "Listening...";
+});
     } catch (e) {
       print("INIT ERROR: $e");
     }
@@ -108,10 +122,13 @@ Future<void> _toggleListening() async {
 
       setState(() {
 
-        isListening = true;
+  isListening = true;
 
-        _text = "Listening...";
-      });
+  currentState =
+      LuckyState.listening;
+
+  _text = "Listening...";
+});
 
       return;
     }
@@ -126,7 +143,8 @@ Future<void> _toggleListening() async {
       setState(() {
 
         isListening = true;
-
+        currentState =
+            LuckyState.listening;
         _text = "Listening...";
       });
 
@@ -192,10 +210,15 @@ Future<void> _toggleListening() async {
         });
       }
 
-     if (mounted) {
-  setState(() {
-    _text = "Thinking...";
-  });
+ if(mounted){
+
+   setState((){
+
+      currentState=
+          LuckyState.thinking;
+
+      _text="Thinking...";
+   });
 }
 
 final response = await _sendToBackend(result);
@@ -259,8 +282,25 @@ final response = await _sendToBackend(result);
 
       // 🔥 SPEAK FINAL ANSWER
       if (message != null && message.isNotEmpty) {
-        await _tts.speak(message);
-      }
+setState(() {
+
+  currentState =
+      LuckyState.talking;
+
+});
+
+await _tts.speak(message);      }
+
+if(mounted){
+
+ setState((){
+
+   currentState=
+      LuckyState.idle;
+
+ });
+}
+
 
       // 🔥 HANDLE COMMANDS
       await _handleCommand(action, app, contact, msg, platform);
@@ -280,11 +320,15 @@ final response = await _sendToBackend(result);
       await _stt.startListening(_onSpeechResult);
 
       if (mounted) {
-        setState(() {
-          isListening = true;
+       setState(() {
 
-          _text = "Listening...";
-        });
+  isListening = true;
+
+  currentState =
+      LuckyState.listening;
+
+  _text = "Listening...";
+});
       }
     } catch (e) {
       print("SPEECH RESULT ERROR: $e");
@@ -715,8 +759,9 @@ final response = await _sendToBackend(result);
 
             children: [
 
-              const Lucky3D(),
-
+        Lucky3D(
+        state: currentState,
+          ),
               const SizedBox(
                 height: 25,
               ),
