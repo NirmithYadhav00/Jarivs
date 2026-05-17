@@ -9,7 +9,7 @@ import 'package:device_apps/device_apps.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:string_similarity/string_similarity.dart';
-
+import '../widgets/lucky_3d.dart';
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -177,8 +177,11 @@ Future<void> _toggleListening() async {
 
       lastCommand = result;
 
-      isProcessing = true;
+    isProcessing = true;
 
+    if (mounted) {
+    setState(() {});
+    }
       await _stt.stopListening();
 
       if (mounted) {
@@ -189,14 +192,13 @@ Future<void> _toggleListening() async {
         });
       }
 
-      // 🔥 INSTANT FEEDBACK
-      await _tts.speak("Thinking");
+     if (mounted) {
+  setState(() {
+    _text = "Thinking...";
+  });
+}
 
-      print("===== API REQUEST =====");
-      print(result);
-
-      final response = await _sendToBackend(result);
-
+final response = await _sendToBackend(result);
       print("===== DECODED RESPONSE =====");
       print(response);
 
@@ -293,9 +295,7 @@ Future<void> _toggleListening() async {
 
   Future<dynamic> _sendToBackend(String text) async {
     try {
-      print("===== API REQUEST =====");
-      print(text);
-
+      
       final response = await http.post(
         Uri.parse("https://jarivs-1.onrender.com/api/v1/process"),
         headers: {"Content-Type": "application/json"},
@@ -707,20 +707,54 @@ Future<void> _toggleListening() async {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Text(
-            _text,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white, fontSize: 22),
+
+      body: SafeArea(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+
+            children: [
+
+              const Lucky3D(),
+
+              const SizedBox(
+                height: 25,
+              ),
+
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 30,
+                ),
+
+                child: Text(
+                  _text,
+
+                  textAlign: TextAlign.center,
+
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
+
       floatingActionButton: FloatingActionButton(
         onPressed: _toggleListening,
-        backgroundColor: isListening ? Colors.red : Colors.blue,
-        child: Icon(isListening ? Icons.mic : Icons.mic_none),
+
+        backgroundColor:
+            isListening
+                ? Colors.red
+                : Colors.blue,
+
+        child: Icon(
+          isListening
+              ? Icons.mic
+              : Icons.mic_none,
+        ),
       ),
     );
   }
