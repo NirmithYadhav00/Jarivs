@@ -9,8 +9,9 @@ import 'package:device_apps/device_apps.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:string_similarity/string_similarity.dart';
-import '../widgets/lucky_3d.dart';
+import '../widgets/lucky_video.dart';
 import '../models/lucky_state.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -29,8 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String lastCommand = "";
   String? lastContact = "";
-  LuckyState currentState =
-    LuckyState.idle;
+  LuckyState currentState = LuckyState.idle;
 
   final Map<String, String> priorityApps = {
     "google": "com.google.android.googlequicksearchbox",
@@ -42,21 +42,21 @@ class _HomeScreenState extends State<HomeScreen> {
     "gpay": "com.google.android.apps.nbu.paisa.user",
   };
 
- bool _initialized=false;
+  bool _initialized = false;
 
-@override
-void initState() {
-  super.initState();
+  @override
+  void initState() {
+    super.initState();
 
-  if(!_initialized){
+    if (!_initialized) {
+      _initialized = true;
 
-    _initialized=true;
-
-    Future.microtask(() async{
-      await _initApp();
-    });
+      Future.microtask(() async {
+        await _initApp();
+      });
+    }
   }
-}
+
   Future<void> _initApp() async {
     try {
       print("===== INIT APP =====");
@@ -73,19 +73,15 @@ void initState() {
 
       print("===== START LISTENING =====");
 
-      await _stt.startListening(_onSpeechResult);
-
       if (!mounted) return;
 
-     setState(() {
+      setState(() {
+        isListening = true;
 
-  isListening = true;
+        currentState = LuckyState.listening;
 
-  currentState =
-      LuckyState.listening;
-
-  _text = "Listening...";
-});
+        _text = "Tap mic to speak";
+      });
     } catch (e) {
       print("INIT ERROR: $e");
     }
@@ -98,78 +94,60 @@ void initState() {
     await Permission.sms.request();
   }
 
+  Future<void> _toggleListening() async {
+    try {
+      // 🔥 INTERRUPT SPEAKING
+      if (_tts.isSpeaking) {
+        print("===== INTERRUPT TTS =====");
 
-Future<void> _toggleListening() async {
+        await _tts.stop();
 
-  try {
+        isProcessing = false;
 
-    // 🔥 INTERRUPT SPEAKING
-    if (_tts.isSpeaking) {
+        await Future.delayed(const Duration(milliseconds: 300));
 
-      print("===== INTERRUPT TTS =====");
+        await _stt.startListening(_onSpeechResult);
 
-      await _tts.stop();
+        if (!mounted) return;
 
-      isProcessing = false;
+        setState(() {
+          isListening = true;
 
-      await Future.delayed(
-        const Duration(milliseconds: 300),
-      );
+          currentState = LuckyState.listening;
 
-      await _stt.startListening(_onSpeechResult);
+          _text = "Listening...";
+        });
 
-      if (!mounted) return;
+        return;
+      }
 
-      setState(() {
+      // 🔥 NORMAL START
+      if (!isListening) {
+        await _stt.startListening(_onSpeechResult);
 
-  isListening = true;
+        if (!mounted) return;
 
-  currentState =
-      LuckyState.listening;
+        setState(() {
+          isListening = true;
+          currentState = LuckyState.listening;
+          _text = "Listening...";
+        });
+      } else {
+        // 🔥 STOP LISTENING
+        await _stt.stopListening();
 
-  _text = "Listening...";
-});
+        if (!mounted) return;
 
-      return;
+        setState(() {
+          isListening = false;
+
+          _text = "Stopped listening";
+        });
+      }
+    } catch (e) {
+      print("TOGGLE ERROR: $e");
     }
-
-    // 🔥 NORMAL START
-    if (!isListening) {
-
-      await _stt.startListening(_onSpeechResult);
-
-      if (!mounted) return;
-
-      setState(() {
-
-        isListening = true;
-        currentState =
-            LuckyState.listening;
-        _text = "Listening...";
-      });
-
-    } else {
-
-      // 🔥 STOP LISTENING
-      await _stt.stopListening();
-
-      if (!mounted) return;
-
-      setState(() {
-
-        isListening = false;
-
-        _text = "Stopped listening";
-      });
-    }
-
-  } catch (e) {
-
-    print("TOGGLE ERROR: $e");
   }
-}
-
-
 
   Future<void> _onSpeechResult(String result) async {
     try {
@@ -195,11 +173,11 @@ Future<void> _toggleListening() async {
 
       lastCommand = result;
 
-    isProcessing = true;
+      isProcessing = true;
 
-    if (mounted) {
-    setState(() {});
-    }
+      if (mounted) {
+        setState(() {});
+      }
       await _stt.stopListening();
 
       if (mounted) {
@@ -210,18 +188,15 @@ Future<void> _toggleListening() async {
         });
       }
 
- if(mounted){
+      if (mounted) {
+        setState(() {
+          currentState = LuckyState.thinking;
 
-   setState((){
+          _text = "Thinking...";
+        });
+      }
 
-      currentState=
-          LuckyState.thinking;
-
-      _text="Thinking...";
-   });
-}
-
-final response = await _sendToBackend(result);
+      final response = await _sendToBackend(result);
       print("===== DECODED RESPONSE =====");
       print(response);
 
@@ -282,54 +257,40 @@ final response = await _sendToBackend(result);
 
       // 🔥 SPEAK FINAL ANSWER
       if (message != null && message.isNotEmpty) {
-setState(() {
+        setState(() {
+          currentState = LuckyState.talking;
+        });
 
-  currentState =
-      LuckyState.talking;
+        await _tts.speak(message);
+      }
 
-});
-
-await _tts.speak(message);      }
-
-if(mounted){
-
- setState((){
-
-   currentState=
-      LuckyState.idle;
-
- });
-}
-
+      if (mounted) {
+        setState(() {
+          currentState = LuckyState.idle;
+        });
+      }
 
       // 🔥 HANDLE COMMANDS
       await _handleCommand(action, app, contact, msg, platform);
 
       isProcessing = false;
 
-      // 🔥 WAIT UNTIL TTS FINISHES
+      // wait until speaking finishes
       while (_tts.isSpeaking) {
-        await Future.delayed(const Duration(milliseconds: 200));
+        await Future.delayed(const Duration(milliseconds: 300));
       }
 
-      // 🔥 SMALL NATURAL DELAY
-      await Future.delayed(const Duration(milliseconds: 500));
+      // prevent self-loop
+      await Future.delayed(const Duration(seconds: 2));
 
-      print("===== RESTART LISTENING =====");
+      if (!mounted) return;
 
-      await _stt.startListening(_onSpeechResult);
+      isProcessing = false;
 
-      if (mounted) {
-       setState(() {
-
-  isListening = true;
-
-  currentState =
-      LuckyState.listening;
-
-  _text = "Listening...";
-});
-      }
+      setState(() {
+        isListening = false;
+        currentState = LuckyState.idle;
+      });
     } catch (e) {
       print("SPEECH RESULT ERROR: $e");
 
@@ -339,7 +300,6 @@ if(mounted){
 
   Future<dynamic> _sendToBackend(String text) async {
     try {
-      
       final response = await http.post(
         Uri.parse("https://jarivs-1.onrender.com/api/v1/process"),
         headers: {"Content-Type": "application/json"},
@@ -740,14 +700,6 @@ if(mounted){
   }
 
   @override
-  void dispose() {
-    _stt.stopListening();
-    _tts.stop();
-
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
@@ -758,28 +710,19 @@ if(mounted){
             mainAxisAlignment: MainAxisAlignment.center,
 
             children: [
+              const LuckyVideo(),
 
-        Lucky3D(
-        state: currentState,
-          ),
-              const SizedBox(
-                height: 25,
-              ),
+              const SizedBox(height: 25),
 
               Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 30,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 30),
 
                 child: Text(
                   _text,
 
                   textAlign: TextAlign.center,
 
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                  ),
+                  style: const TextStyle(color: Colors.white, fontSize: 22),
                 ),
               ),
             ],
@@ -790,16 +733,9 @@ if(mounted){
       floatingActionButton: FloatingActionButton(
         onPressed: _toggleListening,
 
-        backgroundColor:
-            isListening
-                ? Colors.red
-                : Colors.blue,
+        backgroundColor: isListening ? Colors.red : Colors.blue,
 
-        child: Icon(
-          isListening
-              ? Icons.mic
-              : Icons.mic_none,
-        ),
+        child: Icon(isListening ? Icons.mic : Icons.mic_none),
       ),
     );
   }
