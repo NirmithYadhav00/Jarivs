@@ -9,8 +9,8 @@ import 'package:device_apps/device_apps.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:string_similarity/string_similarity.dart';
-import '../widgets/lucky_video.dart';
 import '../models/lucky_state.dart';
+import '../widgets/lucky_avatar.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -256,18 +256,25 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       // 🔥 SPEAK FINAL ANSWER
+      // 🔥 SPEAK FINAL ANSWER
       if (message != null && message.isNotEmpty) {
-        setState(() {
-          currentState = LuckyState.talking;
-        });
+        if (mounted) {
+          setState(() {
+            currentState = LuckyState.talking;
+          });
+        }
 
         await _tts.speak(message);
-      }
 
-      if (mounted) {
-        setState(() {
-          currentState = LuckyState.idle;
-        });
+        while (_tts.isSpeaking) {
+          await Future.delayed(const Duration(milliseconds: 300));
+        }
+
+        if (mounted) {
+          setState(() {
+            currentState = LuckyState.idle;
+          });
+        }
       }
 
       // 🔥 HANDLE COMMANDS
@@ -275,10 +282,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
       isProcessing = false;
 
-      // wait until speaking finishes
-      while (_tts.isSpeaking) {
-        await Future.delayed(const Duration(milliseconds: 300));
-      }
+      await Future.delayed(const Duration(seconds: 2));
+
+      if (!mounted) return;
+
+      setState(() {
+        isListening = false;
+        currentState = LuckyState.idle;
+      });
+      // 🔥 HANDLE COMMANDS
+      await _handleCommand(action, app, contact, msg, platform);
+
+      isProcessing = false;
 
       // prevent self-loop
       await Future.delayed(const Duration(seconds: 2));
@@ -705,24 +720,35 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: Colors.black,
 
       body: SafeArea(
-        child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-
             children: [
-              const LuckyVideo(),
+              // Avatar area
+              Expanded(
+                flex: 5,
+                child: Center(child: LuckyAvatar(state: currentState)),
+              ),
 
-              const SizedBox(height: 25),
+              const SizedBox(height: 15),
 
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 30),
+              // Response text area
+              Expanded(
+                flex: 3,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 25),
 
-                child: Text(
-                  _text,
+                  child: SingleChildScrollView(
+                    child: Text(
+                      _text.isEmpty ? "Tap mic to speak" : _text,
 
-                  textAlign: TextAlign.center,
+                      textAlign: TextAlign.center,
 
-                  style: const TextStyle(color: Colors.white, fontSize: 22),
+                      style: const TextStyle(color: Colors.white, fontSize: 22),
+                    ),
+                  ),
                 ),
               ),
             ],

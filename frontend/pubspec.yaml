@@ -24,6 +24,8 @@ dependencies:
   string_similarity: ^2.0.0
   model_viewer_plus: ^1.7.0
   video_player: ^2.9.1
+  webview_flutter: ^4.9.0
+  flutter_animate: ^4.5.2
 
 dev_dependencies:
   flutter_test:
@@ -34,5 +36,6 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/models/
-    - assets/videos/lucky.mp4
+    - assets/lucky.png
+    - assets/avatar/
+    - assets/avatar_web/
