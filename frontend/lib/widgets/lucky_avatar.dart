@@ -6,7 +6,10 @@ import '../models/lucky_state.dart';
 class LuckyAvatar extends StatefulWidget {
   final LuckyState state;
 
-  const LuckyAvatar({super.key, required this.state});
+  const LuckyAvatar({
+    super.key,
+    required this.state,
+  });
 
   @override
   State<LuckyAvatar> createState() => LuckyAvatarState();
@@ -18,38 +21,62 @@ class LuckyAvatarState extends State<LuckyAvatar> {
   @override
   void didUpdateWidget(LuckyAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
+
     if (oldWidget.state != widget.state) {
       _sendState(widget.state);
     }
   }
 
-  /// Send the current LuckyState to the JS avatar
   void _sendState(LuckyState state) {
     final msg = jsonEncode({
-      'type': 'setState',
-      'state': state.name, // 'idle' | 'listening' | 'thinking' | 'talking'
+      "type": "setState",
+      "state": state.name,
     });
-    _webViewController?.evaluateJavascript(source: '''
-      window.dispatchEvent(new MessageEvent('message', { data: '$msg' }));
-    ''');
+
+    _webViewController?.evaluateJavascript(
+      source: """
+      window.dispatchEvent(
+        new MessageEvent(
+          'message',
+          {data:'$msg'}
+        )
+      );
+      """,
+    );
   }
 
-  /// Call this from HomeScreen when TTS starts
   void startTalking() {
-    _webViewController?.evaluateJavascript(source: '''
-      window.dispatchEvent(new MessageEvent('message', {
-        data: JSON.stringify({ type: 'startTalking' })
-      }));
-    ''');
+    _webViewController?.evaluateJavascript(
+      source: """
+      window.dispatchEvent(
+        new MessageEvent(
+          'message',
+          {
+            data: JSON.stringify({
+              type:'startTalking'
+            })
+          }
+        )
+      );
+      """,
+    );
   }
 
-  /// Call this from HomeScreen when TTS stops
   void stopTalking() {
-    _webViewController?.evaluateJavascript(source: '''
-      window.dispatchEvent(new MessageEvent('message', {
-        data: JSON.stringify({ type: 'stopTalking' })
-      }));
-    ''');
+    _webViewController?.evaluateJavascript(
+      source: """
+      window.dispatchEvent(
+        new MessageEvent(
+          'message',
+          {
+            data: JSON.stringify({
+              type:'stopTalking'
+            })
+          }
+        )
+      );
+      """,
+    );
   }
 
   @override
@@ -57,31 +84,30 @@ class LuckyAvatarState extends State<LuckyAvatar> {
     return SizedBox(
       width: double.infinity,
       height: 420,
+
       child: InAppWebView(
-        initialUrlRequest: URLRequest(
-          url: WebUri.uri(Uri.parse('about:blank')),
-        ),
+        initialFile: "assets/avatar/lucky_viewer.html",
+
         initialSettings: InAppWebViewSettings(
           transparentBackground: true,
+          javaScriptEnabled: true,
+          mediaPlaybackRequiresUserGesture: false,
           allowFileAccessFromFileURLs: true,
           allowUniversalAccessFromFileURLs: true,
-          mediaPlaybackRequiresUserGesture: false,
-          javaScriptEnabled: true,
         ),
-        onWebViewCreated: (controller) {
-  _webViewController = controller;
 
-  controller.loadFile(
-    assetFilePath: 'assets/avatar/lucky_viewer.html',
-  );
-},
+        onWebViewCreated: (controller) {
+          _webViewController = controller;
         },
+
         onLoadStop: (controller, url) {
-          // Send initial state once page is loaded
           _sendState(widget.state);
         },
-        onConsoleMessage: (controller, msg) {
-          debugPrint('[WebView] ${msg.message}');
+
+        onConsoleMessage: (controller, consoleMessage) {
+          debugPrint(
+            "[WebView] ${consoleMessage.message}",
+          );
         },
       ),
     );
