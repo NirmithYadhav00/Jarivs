@@ -69,17 +69,12 @@ class LuckyAvatarState extends State<LuckyAvatar> {
           javaScriptEnabled: true,
         ),
         onWebViewCreated: (controller) {
-          _webViewController = controller;
+  _webViewController = controller;
 
-          // Load the HTML with the VRM viewer
-          // The HTML file and Lucky.vrm must both be in assets/avatar/
-          controller.loadUrl(
-            urlRequest: URLRequest(
-              url: WebUri.uri(
-                Uri.parse('file:///android_asset/flutter_assets/assets/avatar/lucky_viewer.html'),
-              ),
-            ),
-          );
+  controller.loadFile(
+    assetFilePath: 'assets/avatar/lucky_viewer.html',
+  );
+},
         },
         onLoadStop: (controller, url) {
           // Send initial state once page is loaded
