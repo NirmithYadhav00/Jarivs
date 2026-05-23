@@ -26,6 +26,7 @@ dependencies:
   video_player: ^2.9.1
   webview_flutter: ^4.9.0
   flutter_animate: ^4.5.2
+  flutter_inappwebview: ^6.1.5
 
 dev_dependencies:
   flutter_test:
@@ -37,5 +38,6 @@ flutter:
 
   assets:
     - assets/lucky.png
+    - assets/avatar/lucky_viewer.html
     - assets/avatar/
     - assets/avatar_web/

@@ -23,6 +23,9 @@ class _HomeScreenState extends State<HomeScreen> {
   final STTService _stt = STTService();
   final TTSService _tts = TTSService();
 
+  // 🔑 Avatar key for lip sync control
+  final GlobalKey<LuckyAvatarState> _avatarKey = GlobalKey<LuckyAvatarState>();
+
   String _text = "Initializing Lucky AI...";
 
   bool isListening = false;
@@ -69,6 +72,11 @@ class _HomeScreenState extends State<HomeScreen> {
       print("===== INIT TTS =====");
       await _tts.init();
 
+      // 🔑 Hook avatar lip sync to TTS
+      _tts.setStartHandler(() => _avatarKey.currentState?.startTalking());
+      _tts.setCompletionHandler(() => _avatarKey.currentState?.stopTalking());
+      _tts.setErrorHandler((_) => _avatarKey.currentState?.stopTalking());
+
       await _tts.speak("Hello, I am ready");
 
       print("===== START LISTENING =====");
@@ -101,6 +109,8 @@ class _HomeScreenState extends State<HomeScreen> {
         print("===== INTERRUPT TTS =====");
 
         await _tts.stop();
+
+        _avatarKey.currentState?.stopTalking(); // 🔑 stop avatar on interrupt
 
         isProcessing = false;
 
@@ -728,7 +738,12 @@ class _HomeScreenState extends State<HomeScreen> {
               // Avatar area
               Expanded(
                 flex: 5,
-                child: Center(child: LuckyAvatar(state: currentState)),
+                child: Center(
+                  child: LuckyAvatar(
+                    key: _avatarKey, // 🔑 pass key here
+                    state: currentState,
+                  ),
+                ),
               ),
 
               const SizedBox(height: 15),
