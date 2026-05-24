@@ -1,169 +1,461 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; background: transparent; overflow: hidden; }
-    canvas { display: block; width: 100% !important; height: 100% !important; }
-    #debug {
-      position: fixed; bottom: 0; left: 0; right: 0;
-      color: lime; font-size: 11px; background: rgba(0,0,0,0.6);
-      padding: 4px; z-index: 999; word-break: break-all;
-    }
-  </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{width:100%;height:100%;overflow:hidden;background:transparent;}
+canvas{display:block;width:100%!important;height:100%!important;}
+#debug{
+  position:fixed;bottom:0;left:0;right:0;
+  color:lime;font-size:11px;
+  background:rgba(0,0,0,.6);padding:4px;z-index:999;
+}
+</style>
 </head>
 <body>
+
 <div id="debug">Starting...</div>
 
-<!-- Three.js core -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="three.min.js"></script>
+<script src="GLTFLoader.js"></script>
+<script src="three-vrm.js"></script>
 
 <script>
-const dbg = document.getElementById('debug');
-function log(msg) { console.log(msg); dbg.textContent = msg; }
 
-log('Three.js: ' + (typeof THREE !== 'undefined' ? 'OK' : 'FAILED'));
-</script>
+const dbg = document.getElementById("debug");
+function log(msg){ console.log(msg); dbg.textContent = msg; }
 
-<!-- GLTFLoader for r128 -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+// Android WebView fix
+(function(){
+  if(typeof THREE_VRM === "undefined"){
+    const list = [
+      typeof globalThis !== "undefined" ? globalThis : null,
+      typeof self !== "undefined" ? self : null
+    ];
+    for(let i = 0; i < list.length; i++){
+      if(list[i] && list[i].THREE_VRM){ window.THREE_VRM = list[i].THREE_VRM; break; }
+    }
+  }
+})();
 
-<script>
-log('GLTFLoader: ' + (typeof THREE.GLTFLoader !== 'undefined' ? 'OK' : 'FAILED'));
-</script>
-
-<!-- three-vrm UMD bundle -->
-<script src="https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@1.0.12/lib/three-vrm.js"></script>
-
-<script>
-log('three-vrm: ' + (typeof THREE_VRM !== 'undefined' ? 'OK' : 'FAILED'));
-
-// ── Scene ──────────────────────────────────────────────────────────────
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+// ─── Renderer ───────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1;
 document.body.appendChild(renderer.domElement);
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 20);
-camera.position.set(0, 1.4, 3.5);
-camera.lookAt(0, 1.0, 0);
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(32, window.innerWidth/window.innerHeight, 0.1, 50);
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-const dir = new THREE.DirectionalLight(0xffffff, 1.2);
-dir.position.set(1, 2, 3);
+// ─── Lights ─────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+const dir = new THREE.DirectionalLight(0xffffff, 1);
+dir.position.set(0.5, 2, 2);
 scene.add(dir);
 
-// ── State ──────────────────────────────────────────────────────────────
-let vrm = null;
-let avatarState = 'idle';
-let isTalking = false;
-let blinkTimer = 0, blinkInterval = rndBlink(), blinkPhase = 'open', blinkT = 0;
-let breatheT = 0, swayT = 0, headBobT = 0;
-let mouthTimer = 0, mouthInterval = 0.12;
-const mouthShapes = ['aa', 'ih', 'ou', 'ee', 'oh'];
+// ─── State ──────────────────────────────────────────────────
+let vrm            = null;
+let isTalking      = false;
+let currentEmotion = "neutral";
 
-function rndBlink() { return 2.5 + Math.random() * 3.5; }
+// Blink
+let blinkPhase    = "open";
+let blinkTimer    = 0;
+let blinkInterval = 2.5 + Math.random() * 3;
+let blinkT        = 0;
 
-// ── Load VRM ───────────────────────────────────────────────────────────
-log('Loading VRM...');
-const loader = new THREE.GLTFLoader();
-THREE_VRM.VRMUtils && loader.register
-  ? loader.register(p => new THREE_VRM.VRMLoaderPlugin(p))
-  : null;
+// Eye dart
+let eyeDartTimer    = 0;
+let eyeDartInterval = 1.8 + Math.random() * 2.5;
+let eyeDartX        = 0;
+let eyeDartY        = 0;
+let eyeDartTarget   = { x:0, y:0 };
 
-loader.load(
-  'Lucky.vrm',
-  (gltf) => {
-    log('VRM loaded!');
-    vrm = gltf.userData.vrm;
-    if (THREE_VRM.VRMUtils) THREE_VRM.VRMUtils.rotateVRM0(vrm);
-    scene.add(vrm.scene);
+// Breathe / sway
+let breatheT = 0;
+let swayT    = 0;
 
-    const box = new THREE.Box3().setFromObject(vrm.scene);
-    const center = box.getCenter(new THREE.Vector3());
-    vrm.scene.position.sub(center);
-    vrm.scene.position.y += box.getSize(new THREE.Vector3()).y * 0.5 - 0.1;
+// Head
+let headBobT = 0;
 
-    setTimeout(() => dbg.style.display = 'none', 3000);
-    animate();
-  },
-  xhr => log('VRM: ' + (xhr.total > 0 ? (xhr.loaded/xhr.total*100).toFixed(0)+'%' : xhr.loaded+' bytes')),
-  err => log('VRM ERROR: ' + (err.message || err))
-);
+// Lip sync
+let mouthCurrent      = 0;
+const mouthShapes     = ["aa","ih","ou","ee","oh"];
+let currentMouthShape = 0;
+let mouthShapeTimer   = 0;
 
-// ── Flutter messages ───────────────────────────────────────────────────
-window.addEventListener('message', e => {
-  try {
-    const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-    if (!d) return;
-    if (d.type === 'setState') { avatarState = d.state; isTalking = d.state === 'talking'; if (!isTalking) stopMouth(); }
-    else if (d.type === 'startTalking') { isTalking = true; avatarState = 'talking'; }
-    else if (d.type === 'stopTalking') { isTalking = false; avatarState = 'idle'; stopMouth(); }
-  } catch(_) {}
-});
+// Emotion transition
+let emotionCurrent = {};
+let emotionTarget  = {};
+const emotionKeys  = ["happy","sad","angry","surprised","relaxed","neutral"];
+emotionKeys.forEach(k => { emotionCurrent[k] = 0; emotionTarget[k] = 0; });
 
-// ── Helpers ────────────────────────────────────────────────────────────
-function setExpr(name, val) {
-  if (!vrm) return;
-  try { vrm.expressionManager?.setValue(name, val); } catch(_) {}
+// ─── Thinking Pose State ────────────────────────────────────
+let isThinking     = false;
+let thinkT         = 0;
+let thinkHandRaise = 0; // 0→1 blend weight
+
+// ─── VRM Receive ────────────────────────────────────────────
+window.receiveVRM = function(base64){
+  try{
+    log("Parsing VRM...");
+    const binary = atob(base64);
+    const bytes  = new Uint8Array(binary.length);
+    for(let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+    const loader = new THREE.GLTFLoader();
+    loader.register(function(parser){
+      return new THREE_VRM.VRMLoaderPlugin(parser, { autoUpdateHumanBones:true });
+    });
+    loader.parse(bytes.buffer, "",
+      function(gltf){
+        const loaded = gltf.userData.vrm;
+        if(loaded) onVRMReady(loaded);
+      },
+      function(error){ log(error.message || error); }
+    );
+  }catch(e){ log(e.message); }
+};
+
+// ─── On Ready ───────────────────────────────────────────────
+function onVRMReady(loadedVrm){
+  vrm = loadedVrm;
+  log("VRM loaded!");
+
+  if(THREE_VRM.VRMUtils) THREE_VRM.VRMUtils.rotateVRM0(vrm);
+  scene.add(vrm.scene);
+  setRestPose();
+
+  const box = new THREE.Box3().setFromObject(vrm.scene);
+  vrm.scene.position.y -= box.min.y;
+
+  camera.position.set(0, 1.15, 1.45);
+  camera.lookAt(0, 1.55, 0);
+  camera.updateProjectionMatrix();
+
+  setEmotionTarget("relaxed");
+
+  setTimeout(function(){ dbg.style.display = "none"; }, 3000);
+  animate();
 }
-function stopMouth() { mouthShapes.forEach(s => setExpr(s, 0)); }
 
-// ── Animate ────────────────────────────────────────────────────────────
-const clock = new THREE.Clock();
-function animate() {
-  requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05);
-  if (vrm) { blink(dt); breathe(dt); if (isTalking) lipSync(dt); headMotion(dt); vrm.update(dt); }
-  renderer.render(scene, camera);
+// ─── Rest Pose ──────────────────────────────────────────────
+function setRestPose(){
+  if(!vrm) return;
+  function bone(name){
+    try{ return vrm.humanoid.getNormalizedBoneNode(name); }catch(e){ return null; }
+  }
+  const lu = bone("leftUpperArm");
+  const ru = bone("rightUpperArm");
+  if(lu) lu.rotation.z =  1.2;
+  if(ru) ru.rotation.z = -1.2;
+  const ll = bone("leftLowerArm");
+  const rl = bone("rightLowerArm");
+  if(ll) ll.rotation.z =  0.2;
+  if(rl) rl.rotation.z = -0.2;
 }
 
-function blink(dt) {
-  blinkTimer += dt;
-  if (blinkPhase === 'open' && blinkTimer >= blinkInterval) { blinkPhase = 'closing'; blinkTimer = 0; blinkT = 0; }
-  if (blinkPhase === 'closing') { blinkT += dt/0.07; const v = Math.min(blinkT,1); setExpr('blinkLeft',v); setExpr('blinkRight',v); if (blinkT>=1){blinkPhase='closed';blinkT=0;} }
-  if (blinkPhase === 'closed') { blinkT += dt; if (blinkT>=0.05){blinkPhase='opening';blinkT=0;} }
-  if (blinkPhase === 'opening') { blinkT += dt/0.08; const v=1-Math.min(blinkT,1); setExpr('blinkLeft',v); setExpr('blinkRight',v); if (blinkT>=1){blinkPhase='open';blinkTimer=0;blinkInterval=rndBlink();} }
-}
-
-function breathe(dt) {
-  breatheT += dt; swayT += dt;
-  const b = Math.sin(breatheT * 0.4 * Math.PI) * 0.5 + 0.5;
-  const spine = vrm.humanoid?.getNormalizedBoneNode('spine');
-  if (spine) { spine.rotation.x = b*0.015; spine.position.y = b*0.003; }
-  const chest = vrm.humanoid?.getNormalizedBoneNode('chest');
-  if (chest) chest.rotation.x = b*0.01;
-  const hips = vrm.humanoid?.getNormalizedBoneNode('hips');
-  if (hips) hips.rotation.z = Math.sin(swayT*0.3)*0.008;
-}
-
-function lipSync(dt) {
-  mouthTimer += dt;
-  if (mouthTimer >= mouthInterval) {
-    mouthTimer = 0; mouthInterval = 0.08 + Math.random()*0.1;
-    stopMouth();
-    setExpr(mouthShapes[Math.floor(Math.random()*mouthShapes.length)], 0.3+Math.random()*0.6);
+// ─── Expression Helpers ─────────────────────────────────────
+function setExpr(name, val){
+  if(vrm && vrm.expressionManager){
+    try{ vrm.expressionManager.setValue(name, Math.max(0, Math.min(1, val))); }catch(e){}
   }
 }
 
-function headMotion(dt) {
-  headBobT += dt;
-  const head = vrm.humanoid?.getNormalizedBoneNode('head');
-  if (!head) return;
-  if (isTalking) { head.rotation.x = Math.sin(headBobT*3.5)*0.025; head.rotation.y = Math.sin(headBobT*1.8)*0.02; }
-  else if (avatarState==='listening') { head.rotation.z = Math.sin(headBobT*0.8)*0.03; head.rotation.y = -0.05; }
-  else if (avatarState==='thinking') { head.rotation.x = -0.04; head.rotation.y = 0.06; }
-  else { head.rotation.x = Math.sin(headBobT*0.5)*0.01; head.rotation.y = Math.sin(headBobT*0.3)*0.015; head.rotation.z = 0; }
+function stopMouth(){
+  mouthShapes.forEach(s => setExpr(s, 0));
 }
 
-window.addEventListener('resize', () => {
+// ─── Emotion System ─────────────────────────────────────────
+function setEmotionTarget(emotion){
+  currentEmotion = emotion;
+  emotionKeys.forEach(k => { emotionTarget[k] = 0; });
+  if(emotionTarget.hasOwnProperty(emotion)) emotionTarget[emotion] = 1;
+}
+
+function updateEmotions(dt){
+  const speed = 3.0;
+  emotionKeys.forEach(k => {
+    const diff = emotionTarget[k] - emotionCurrent[k];
+    emotionCurrent[k] += diff * speed * dt;
+    emotionCurrent[k]  = Math.max(0, Math.min(1, emotionCurrent[k]));
+    if(k !== "neutral") setExpr(k, emotionCurrent[k]);
+  });
+}
+
+// ─── Thinking Pose ──────────────────────────────────────────
+// FIX 1: This function is now actually called in animate() below.
+// FIX 2: headMotion() yields control when thinkHandRaise > 0, so the
+//         head tilt here is no longer overwritten every frame.
+function applyThinkingPose(dt){
+  if(!vrm) return;
+
+  if(isThinking){
+    thinkT += dt;
+    thinkHandRaise = Math.min(1, thinkHandRaise + dt * 1.5);
+  } else {
+    thinkHandRaise = Math.max(0, thinkHandRaise - dt * 2.0);
+    if(thinkHandRaise === 0){
+      thinkT = 0;
+      return;
+    }
+  }
+
+  const r    = thinkHandRaise;
+  const sway = isThinking ? Math.sin(thinkT * 1.2) * 0.008 : 0;
+
+  try{
+    // Right upper arm — lift from rest (rest z=-1.2) toward head
+    const rua = vrm.humanoid.getNormalizedBoneNode("rightUpperArm");
+    if(rua){
+      rua.rotation.z = -1.2 + r * 0.85;
+      rua.rotation.x = r * 0.3;
+    }
+
+    // Right lower arm — bend at elbow toward face
+    const rla = vrm.humanoid.getNormalizedBoneNode("rightLowerArm");
+    if(rla){
+      rla.rotation.z = -0.2 - r * 0.5;
+      rla.rotation.x = r * 0.6;
+    }
+
+    // Right hand — slight curl
+    const rh = vrm.humanoid.getNormalizedBoneNode("rightHand");
+    if(rh){ rh.rotation.x = r * 0.3; }
+
+    // Head tilt — cute right tilt + slight upward look
+    const head = vrm.humanoid.getNormalizedBoneNode("head");
+    if(head){
+      head.rotation.z = r * -0.12 + sway; // tilt right
+      head.rotation.x = r * -0.04;        // slight look up
+      head.rotation.y = r *  0.06;        // turn toward hand
+    }
+
+    // Subtle ou pout only while actively thinking (not while blending out)
+    if(isThinking){
+      setExpr("ou", 0.18 + Math.sin(thinkT * 0.8) * 0.08);
+    }
+  }catch(e){}
+}
+
+// ─── External API (called from Flutter) ─────────────────────
+window.setThinkingPose = function(active){
+  isThinking = !!active;
+  if(!active) setExpr("ou", 0);
+};
+
+// Alias — home_screen.dart calls both names
+window.applyThinkingPose = window.setThinkingPose;
+
+window.startTalking = function(emotion){
+  isTalking  = true;
+  isThinking = false; // exit thinking when Lucky starts speaking
+  setExpr("ou", 0);
+  setEmotionTarget("neutral");
+  window._pendingEmotion = emotion || "relaxed";
+};
+
+window.stopTalking = function(){
+  isTalking    = false;
+  mouthCurrent = 0;
+  stopMouth();
+  setEmotionTarget(window._pendingEmotion || "relaxed");
+  window._pendingEmotion = null;
+};
+
+window.setEmotion = function(emotion){
+  setEmotionTarget(emotion);
+};
+
+// Listen for Flutter message events
+window.addEventListener("message", function(e){
+  try{
+    const data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
+    if(data.type === "startTalking") window.startTalking(data.emotion);
+    if(data.type === "stopTalking")  window.stopTalking();
+    if(data.type === "setEmotion")   window.setEmotion(data.emotion);
+    if(data.type === "setState"){
+      const s = data.state;
+      if(s === "talking") { window.startTalking("relaxed"); window.setThinkingPose(false); stopMouth(); }
+      if(s === "idle")    { window.stopTalking(); window.setThinkingPose(false); }
+      if(s === "thinking"){ setEmotionTarget("neutral"); window.setThinkingPose(true); }
+      if(s === "happy")   window.setEmotion("happy");
+      if(s === "sad")     window.setEmotion("sad");
+    }
+  }catch(err){}
+});
+
+// ─── Lip Sync ───────────────────────────────────────────────
+let externalAmplitude = 0.0;
+let smoothedAmplitude  = 0.0;
+
+window.setAmplitude = function(val){
+  externalAmplitude = Math.max(0, Math.min(1, val));
+};
+
+function lipSync(dt){
+  smoothedAmplitude += (externalAmplitude - smoothedAmplitude) * 18 * dt;
+  mouthCurrent = smoothedAmplitude;
+
+  const cycleSpeed = 0.05 + mouthCurrent * 0.10;
+  mouthShapeTimer += dt;
+  if(mouthShapeTimer >= cycleSpeed){
+    mouthShapeTimer = 0;
+    const next = Math.floor(Math.random() * mouthShapes.length);
+    setExpr(mouthShapes[currentMouthShape], 0);
+    currentMouthShape = next;
+  }
+
+  setExpr(mouthShapes[currentMouthShape], mouthCurrent);
+  if(mouthCurrent < 0.02) stopMouth();
+}
+
+// ─── Blink ──────────────────────────────────────────────────
+function blink(dt){
+  blinkTimer += dt;
+
+  if(blinkPhase === "open" && blinkTimer >= blinkInterval){
+    blinkPhase = "closing"; blinkTimer = 0; blinkT = 0;
+  }
+  if(blinkPhase === "closing"){
+    blinkT += dt / 0.07;
+    setExpr("blink", Math.min(blinkT, 1));
+    if(blinkT >= 1){ blinkPhase = "closed"; blinkT = 0; }
+  }
+  if(blinkPhase === "closed"){
+    blinkT += dt;
+    if(blinkT >= 0.05){ blinkPhase = "opening"; blinkT = 0; }
+  }
+  if(blinkPhase === "opening"){
+    blinkT += dt / 0.08;
+    setExpr("blink", 1 - Math.min(blinkT, 1));
+    if(blinkT >= 1){
+      blinkPhase    = "open";
+      blinkTimer    = 0;
+      blinkInterval = 2.5 + Math.random() * 3.5;
+      setExpr("blink", 0);
+    }
+  }
+}
+
+// ─── Eye Dart ───────────────────────────────────────────────
+function eyeDart(dt){
+  eyeDartTimer += dt;
+  if(eyeDartTimer >= eyeDartInterval){
+    eyeDartTimer    = 0;
+    eyeDartInterval = 1.2 + Math.random() * 2.8;
+    eyeDartTarget.x = (Math.random() - 0.5) * 0.018;
+    eyeDartTarget.y = (Math.random() - 0.5) * 0.010;
+    if(Math.random() < 0.3){ eyeDartTarget.x = 0; eyeDartTarget.y = 0; }
+  }
+  eyeDartX += (eyeDartTarget.x - eyeDartX) * 6 * dt;
+  eyeDartY += (eyeDartTarget.y - eyeDartY) * 6 * dt;
+
+  try{
+    const leftEye  = vrm.humanoid.getNormalizedBoneNode("leftEye");
+    const rightEye = vrm.humanoid.getNormalizedBoneNode("rightEye");
+    if(leftEye){  leftEye.rotation.y  = eyeDartX; leftEye.rotation.x  = eyeDartY; }
+    if(rightEye){ rightEye.rotation.y = eyeDartX; rightEye.rotation.x = eyeDartY; }
+  }catch(e){}
+}
+
+// ─── Breathe ────────────────────────────────────────────────
+function breathe(dt){
+  breatheT += dt;
+  swayT    += dt;
+
+  const b = Math.sin(breatheT * 0.4 * Math.PI) * 0.5 + 0.5;
+  const talkBoost = isTalking ? 1.4 : 1.0;
+
+  let spine = null, chest = null, hips = null;
+  try{
+    spine = vrm.humanoid.getNormalizedBoneNode("spine");
+    chest = vrm.humanoid.getNormalizedBoneNode("chest");
+    hips  = vrm.humanoid.getNormalizedBoneNode("hips");
+  }catch(e){}
+
+  if(spine){
+    spine.rotation.x = b * 0.015 * talkBoost;
+    spine.position.y = b * 0.003;
+  }
+  if(chest) chest.rotation.x = b * 0.01 * talkBoost;
+  if(hips)  hips.rotation.z  = Math.sin(swayT * 0.3) * 0.008;
+}
+
+// ─── Shoulder Sway ──────────────────────────────────────────
+function shoulderSway(dt){
+  const t = swayT;
+  try{
+    const ls = vrm.humanoid.getNormalizedBoneNode("leftShoulder");
+    const rs = vrm.humanoid.getNormalizedBoneNode("rightShoulder");
+    if(ls) ls.rotation.z =  Math.sin(t * 0.4) * 0.012;
+    if(rs) rs.rotation.z = -Math.sin(t * 0.4) * 0.012;
+  }catch(e){}
+}
+
+// ─── Head Motion ─────────────────────────────────────────────
+// FIX 3: Guard added — when thinkHandRaise > 0, applyThinkingPose() owns
+//         the head. Without this guard it was overwriting the tilt every frame.
+function headMotion(dt){
+  headBobT += dt;
+
+  // Yield to applyThinkingPose() during thinking AND while blending back out
+  if(isThinking || thinkHandRaise > 0) return;
+
+  let head = null;
+  try{ head = vrm.humanoid.getNormalizedBoneNode("head"); }catch(e){}
+  if(!head) return;
+
+  if(isTalking){
+    head.rotation.x = Math.sin(headBobT * 3.2) * 0.03 + Math.sin(headBobT * 1.5) * 0.01;
+    head.rotation.y = Math.sin(headBobT * 1.8) * 0.025;
+    head.rotation.z = Math.sin(headBobT * 2.1) * 0.008;
+  } else {
+    head.rotation.x = Math.sin(headBobT * 0.5)  * 0.008;
+    head.rotation.y = Math.sin(headBobT * 0.3)  * 0.012;
+    head.rotation.z = Math.sin(headBobT * 0.2)  * 0.004;
+  }
+}
+
+// ─── Animate Loop ───────────────────────────────────────────
+const clock = new THREE.Clock();
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  if(vrm){
+    try{
+      blink(dt);
+      eyeDart(dt);
+      breathe(dt);
+      shoulderSway(dt);
+      headMotion(dt);
+      applyThinkingPose(dt); // ← FIX 1: was never called before
+      updateEmotions(dt);
+      if(isTalking) lipSync(dt);
+      vrm.update(dt);
+    }catch(e){ console.log("Anim error:", e); }
+  }
+
+  renderer.render(scene, camera);
+}
+
+// ─── Flutter Bridge ─────────────────────────────────────────
+window.addEventListener("load", function(){
+  window.flutter_inappwebview.callHandler("onReady");
+});
+
+window.addEventListener("resize", function(){
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
 </script>
 </body>
 </html>

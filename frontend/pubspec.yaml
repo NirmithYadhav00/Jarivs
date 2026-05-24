@@ -10,10 +10,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
   cupertino_icons: ^1.0.8
   speech_to_text: ^7.3.0
-  flutter_tts: ^3.8.5
   http: ^1.2.0
   url_launcher: ^6.2.5
   flutter_riverpod: ^2.5.1
@@ -27,6 +25,8 @@ dependencies:
   webview_flutter: ^4.9.0
   flutter_animate: ^4.5.2
   flutter_inappwebview: ^6.1.5
+  just_audio: ^0.9.38
+  flutter_tts: ^4.0.2
 
 dev_dependencies:
   flutter_test:
@@ -37,7 +37,8 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/lucky.png
     - assets/avatar/lucky_viewer.html
-    - assets/avatar/
-    - assets/avatar_web/
+    - assets/avatar/three.min.js
+    - assets/avatar/GLTFLoader.js
+    - assets/avatar/three-vrm.js
+    - assets/avatar/Lucky.vrm
