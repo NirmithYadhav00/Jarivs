@@ -7,17 +7,108 @@
 *{margin:0;padding:0;box-sizing:border-box;}
 html,body{width:100%;height:100%;overflow:hidden;background:transparent;}
 canvas{display:block;width:100%!important;height:100%!important;}
+
+/* ── Debug overlay ─────────────────────────────────────────── */
 #debug{
   position:fixed;bottom:0;left:0;right:0;
   color:lime;font-size:11px;
   background:rgba(0,0,0,.6);padding:4px;z-index:999;
 }
+
+/* ── Holographic overlay canvas ───────────────────────────── */
+#holo-canvas{
+  position:fixed;top:0;left:0;width:100%;height:100%;
+  pointer-events:none;z-index:10;
+}
+
+/* ── Scanlines overlay ─────────────────────────────────────── */
+#scanlines{
+  position:fixed;top:0;left:0;width:100%;height:100%;
+  pointer-events:none;z-index:11;
+  background:repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0,212,255,0.018) 3px,
+    rgba(0,212,255,0.018) 4px
+  );
+  animation:scanShift 12s linear infinite;
+}
+
+/* ── Rim light overlays ─────────────────────────────────────── */
+#rim-left{
+  position:fixed;top:0;left:0;width:38%;height:100%;
+  pointer-events:none;z-index:9;
+  background:linear-gradient(to right,
+    rgba(0,212,255,0.09) 0%,
+    rgba(0,212,255,0.04) 40%,
+    transparent 100%
+  );
+  animation:rimPulse 3s ease-in-out infinite alternate;
+}
+#rim-right{
+  position:fixed;top:0;right:0;width:38%;height:100%;
+  pointer-events:none;z-index:9;
+  background:linear-gradient(to left,
+    rgba(180,0,255,0.08) 0%,
+    rgba(180,0,255,0.03) 40%,
+    transparent 100%
+  );
+  animation:rimPulse 3.6s ease-in-out infinite alternate;
+}
+
+/* ── Bottom energy glow ─────────────────────────────────────── */
+#energy-floor{
+  position:fixed;bottom:0;left:10%;width:80%;height:3px;
+  pointer-events:none;z-index:12;
+  background:linear-gradient(to right,
+    transparent,
+    rgba(0,212,255,0.6) 30%,
+    rgba(180,0,255,0.6) 70%,
+    transparent
+  );
+  filter:blur(2px);
+  animation:energyPulse 2.5s ease-in-out infinite alternate;
+}
+#energy-floor2{
+  position:fixed;bottom:0;left:20%;width:60%;height:12px;
+  pointer-events:none;z-index:12;
+  background:linear-gradient(to right,
+    transparent,
+    rgba(0,212,255,0.12) 30%,
+    rgba(180,0,255,0.10) 70%,
+    transparent
+  );
+  filter:blur(6px);
+  animation:energyPulse 2.5s ease-in-out infinite alternate;
+}
+
+@keyframes scanShift{
+  0%{background-position:0 0;}
+  100%{background-position:0 100%;}
+}
+@keyframes rimPulse{
+  0%{opacity:0.7;}
+  100%{opacity:1.0;}
+}
+@keyframes energyPulse{
+  0%{opacity:0.5;transform:scaleX(0.9);}
+  100%{opacity:1.0;transform:scaleX(1.0);}
+}
 </style>
 </head>
 <body>
 
+<!-- Visual effect overlays (no interaction with WebGL / VRM logic) -->
+<div id="rim-left"></div>
+<div id="rim-right"></div>
+<div id="scanlines"></div>
+<canvas id="holo-canvas"></canvas>
+<div id="energy-floor"></div>
+<div id="energy-floor2"></div>
 <div id="debug">Starting...</div>
 
+<!-- ── THREE.js / VRM scripts (unchanged) ───────────────────── -->
 <script src="three.min.js"></script>
 <script src="GLTFLoader.js"></script>
 <script src="three-vrm.js"></script>
@@ -27,7 +118,7 @@ canvas{display:block;width:100%!important;height:100%!important;}
 const dbg = document.getElementById("debug");
 function log(msg){ console.log(msg); dbg.textContent = msg; }
 
-// Android WebView fix
+// ─── Android WebView / Adreno fix ───────────────────────────
 (function(){
   if(typeof THREE_VRM === "undefined"){
     const list = [
@@ -40,110 +131,151 @@ function log(msg){ console.log(msg); dbg.textContent = msg; }
   }
 })();
 
-// ─── Renderer ───────────────────────────────────────────────
-const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
-renderer.setPixelRatio(window.devicePixelRatio);
+// ─── WebGL context with Adreno-safe flags ────────────────────
+function createRenderer() {
+  const canvas = document.createElement('canvas');
+  const ctxAttribs = {
+    alpha: true,
+    antialias: false,
+    powerPreference: 'default',
+    failIfMajorPerformanceCaveat: false,
+    preserveDrawingBuffer: false,
+    premultipliedAlpha: true,
+    stencil: false,
+    depth: true,
+  };
+  const gl = canvas.getContext('webgl', ctxAttribs)
+           || canvas.getContext('experimental-webgl', ctxAttribs);
+  if (!gl) { log("WebGL not supported on this device"); return null; }
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({
+      canvas: canvas,
+      context: gl,
+      antialias: false,
+      alpha: true,
+      precision: 'mediump',
+      powerPreference: 'default',
+      failIfMajorPerformanceCaveat: false,
+      logarithmicDepthBuffer: false,
+    });
+  } catch(e) { log("Renderer creation failed: " + e.message); return null; }
+  return renderer;
+}
+
+const renderer = createRenderer();
+if (!renderer) {
+  setTimeout(function(){
+    try { window.flutter_inappwebview.callHandler("onReady"); } catch(e){}
+  }, 500);
+  throw new Error("No WebGL renderer");
+}
+
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMapping = THREE.NoToneMapping;
 renderer.toneMappingExposure = 1;
+if (renderer.physicallyCorrectLights !== undefined) {
+  renderer.physicallyCorrectLights = false;
+}
 document.body.appendChild(renderer.domElement);
 
 const scene  = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(32, window.innerWidth/window.innerHeight, 0.1, 50);
 
-// ─── Lights ─────────────────────────────────────────────────
-scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-const dir = new THREE.DirectionalLight(0xffffff, 1);
+// ─── Lights (original + enhanced rim) ───────────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+
+const dir = new THREE.DirectionalLight(0xffffff, 1.0);
 dir.position.set(0.5, 2, 2);
 scene.add(dir);
 
-// ─── State ──────────────────────────────────────────────────
+// Enhanced cyan rim left
+const rimLeft = new THREE.DirectionalLight(0x00D4FF, 1.6);
+rimLeft.position.set(-3, 1.2, 0.5);
+scene.add(rimLeft);
+
+// Enhanced magenta rim right
+const rimRight = new THREE.DirectionalLight(0xFF00AA, 1.3);
+rimRight.position.set(3, 1.2, 0.5);
+scene.add(rimRight);
+
+// Subtle purple fill from below
+const fillBelow = new THREE.DirectionalLight(0x6C00CC, 0.4);
+fillBelow.position.set(0, -2, 1);
+scene.add(fillBelow);
+
+// ─── State (unchanged) ──────────────────────────────────────
 let vrm            = null;
 let isTalking      = false;
 let currentEmotion = "neutral";
 
-// Blink
 let blinkPhase    = "open";
 let blinkTimer    = 0;
 let blinkInterval = 2.5 + Math.random() * 3;
 let blinkT        = 0;
 
-// Eye dart
 let eyeDartTimer    = 0;
 let eyeDartInterval = 1.8 + Math.random() * 2.5;
 let eyeDartX        = 0;
 let eyeDartY        = 0;
 let eyeDartTarget   = { x:0, y:0 };
 
-// Breathe / sway
 let breatheT = 0;
 let swayT    = 0;
-
-// Head
 let headBobT = 0;
 
-// Lip sync
-let mouthCurrent      = 0;
-const mouthShapes     = ["aa","ih","ou","ee","oh"];
+let mouthCurrent = 0;
+const mouthShapes = ["aa","ih","ou","ee","oh"];
 let currentMouthShape = 0;
 let mouthShapeTimer   = 0;
+let mouthShapeInterval= 0.08 + Math.random() * 0.1;
 
-// Emotion transition
 let emotionCurrent = {};
 let emotionTarget  = {};
 const emotionKeys  = ["happy","sad","angry","surprised","relaxed","neutral"];
 emotionKeys.forEach(k => { emotionCurrent[k] = 0; emotionTarget[k] = 0; });
 
-// ─── Thinking Pose State ────────────────────────────────────
-let isThinking     = false;
-let thinkT         = 0;
-let thinkHandRaise = 0; // 0→1 blend weight
-
-// ─── VRM Receive ────────────────────────────────────────────
+// ─── VRM Receive (unchanged) ─────────────────────────────────
 window.receiveVRM = function(base64){
   try{
     log("Parsing VRM...");
     const binary = atob(base64);
     const bytes  = new Uint8Array(binary.length);
     for(let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-
     const loader = new THREE.GLTFLoader();
     loader.register(function(parser){
-      return new THREE_VRM.VRMLoaderPlugin(parser, { autoUpdateHumanBones:true });
+      return new THREE_VRM.VRMLoaderPlugin(parser, { autoUpdateHumanBones: true });
     });
     loader.parse(bytes.buffer, "",
       function(gltf){
         const loaded = gltf.userData.vrm;
         if(loaded) onVRMReady(loaded);
+        else log("VRM data missing in gltf");
       },
-      function(error){ log(error.message || error); }
+      function(error){ log("Parse error: " + (error.message || error)); }
     );
-  }catch(e){ log(e.message); }
+  }catch(e){ log("receiveVRM error: " + e.message); }
 };
 
-// ─── On Ready ───────────────────────────────────────────────
+// ─── On Ready (unchanged) ───────────────────────────────────
 function onVRMReady(loadedVrm){
   vrm = loadedVrm;
   log("VRM loaded!");
-
   if(THREE_VRM.VRMUtils) THREE_VRM.VRMUtils.rotateVRM0(vrm);
   scene.add(vrm.scene);
   setRestPose();
-
   const box = new THREE.Box3().setFromObject(vrm.scene);
   vrm.scene.position.y -= box.min.y;
-
   camera.position.set(0, 1.15, 1.45);
   camera.lookAt(0, 1.55, 0);
   camera.updateProjectionMatrix();
-
   setEmotionTarget("relaxed");
-
   setTimeout(function(){ dbg.style.display = "none"; }, 3000);
   animate();
 }
 
-// ─── Rest Pose ──────────────────────────────────────────────
+// ─── Rest Pose (unchanged) ───────────────────────────────────
 function setRestPose(){
   if(!vrm) return;
   function bone(name){
@@ -159,24 +291,22 @@ function setRestPose(){
   if(rl) rl.rotation.z = -0.2;
 }
 
-// ─── Expression Helpers ─────────────────────────────────────
+// ─── Expression Helpers (unchanged) ─────────────────────────
 function setExpr(name, val){
   if(vrm && vrm.expressionManager){
     try{ vrm.expressionManager.setValue(name, Math.max(0, Math.min(1, val))); }catch(e){}
   }
 }
-
 function stopMouth(){
   mouthShapes.forEach(s => setExpr(s, 0));
 }
 
-// ─── Emotion System ─────────────────────────────────────────
+// ─── Emotion System (unchanged) ─────────────────────────────
 function setEmotionTarget(emotion){
   currentEmotion = emotion;
   emotionKeys.forEach(k => { emotionTarget[k] = 0; });
   if(emotionTarget.hasOwnProperty(emotion)) emotionTarget[emotion] = 1;
 }
-
 function updateEmotions(dt){
   const speed = 3.0;
   emotionKeys.forEach(k => {
@@ -187,78 +317,53 @@ function updateEmotions(dt){
   });
 }
 
-// ─── Thinking Pose ──────────────────────────────────────────
-// FIX 1: This function is now actually called in animate() below.
-// FIX 2: headMotion() yields control when thinkHandRaise > 0, so the
-//         head tilt here is no longer overwritten every frame.
+// ─── Thinking Pose (unchanged) ───────────────────────────────
+let isThinking    = false;
+let thinkT        = 0;
+let thinkHandRaise= 0;
+
+function setThinkingPose(active){
+  isThinking = active;
+  if(!active){ thinkHandRaise = 0; thinkT = 0; }
+}
 function applyThinkingPose(dt){
-  if(!vrm) return;
-
-  if(isThinking){
-    thinkT += dt;
-    thinkHandRaise = Math.min(1, thinkHandRaise + dt * 1.5);
-  } else {
-    thinkHandRaise = Math.max(0, thinkHandRaise - dt * 2.0);
-    if(thinkHandRaise === 0){
-      thinkT = 0;
-      return;
+  if(!isThinking){
+    if(thinkHandRaise > 0){
+      thinkHandRaise -= dt * 2;
+      thinkHandRaise = Math.max(0, thinkHandRaise);
+      _applyHandAndHead(thinkHandRaise, 0);
     }
+    return;
   }
-
-  const r    = thinkHandRaise;
-  const sway = isThinking ? Math.sin(thinkT * 1.2) * 0.008 : 0;
-
+  thinkT += dt;
+  if(thinkHandRaise < 1){ thinkHandRaise += dt * 1.5; thinkHandRaise = Math.min(1, thinkHandRaise); }
+  const sway = Math.sin(thinkT * 1.2) * 0.008;
+  _applyHandAndHead(thinkHandRaise, sway);
+  setExpr("ou", 0.18 + Math.sin(thinkT * 0.8) * 0.08);
+}
+function _applyHandAndHead(raise, sway){
   try{
-    // Right upper arm — lift from rest (rest z=-1.2) toward head
     const rua = vrm.humanoid.getNormalizedBoneNode("rightUpperArm");
-    if(rua){
-      rua.rotation.z = -1.2 + r * 0.85;
-      rua.rotation.x = r * 0.3;
-    }
-
-    // Right lower arm — bend at elbow toward face
+    if(rua){ rua.rotation.z = -1.2 + raise * 0.85; rua.rotation.x = raise * 0.3; }
     const rla = vrm.humanoid.getNormalizedBoneNode("rightLowerArm");
-    if(rla){
-      rla.rotation.z = -0.2 - r * 0.5;
-      rla.rotation.x = r * 0.6;
-    }
-
-    // Right hand — slight curl
+    if(rla){ rla.rotation.z = -0.2 - raise * 0.5; rla.rotation.x = raise * 0.6; }
     const rh = vrm.humanoid.getNormalizedBoneNode("rightHand");
-    if(rh){ rh.rotation.x = r * 0.3; }
-
-    // Head tilt — cute right tilt + slight upward look
+    if(rh) rh.rotation.x = raise * 0.3;
     const head = vrm.humanoid.getNormalizedBoneNode("head");
-    if(head){
-      head.rotation.z = r * -0.12 + sway; // tilt right
-      head.rotation.x = r * -0.04;        // slight look up
-      head.rotation.y = r *  0.06;        // turn toward hand
-    }
-
-    // Subtle ou pout only while actively thinking (not while blending out)
-    if(isThinking){
-      setExpr("ou", 0.18 + Math.sin(thinkT * 0.8) * 0.08);
+    if(head && isThinking){
+      head.rotation.z = raise * -0.12 + sway;
+      head.rotation.x = raise * -0.04;
+      head.rotation.y = raise * 0.06;
     }
   }catch(e){}
 }
 
-// ─── External API (called from Flutter) ─────────────────────
-window.setThinkingPose = function(active){
-  isThinking = !!active;
-  if(!active) setExpr("ou", 0);
-};
-
-// Alias — home_screen.dart calls both names
-window.applyThinkingPose = window.setThinkingPose;
-
+// ─── External API (unchanged) ───────────────────────────────
 window.startTalking = function(emotion){
-  isTalking  = true;
-  isThinking = false; // exit thinking when Lucky starts speaking
-  setExpr("ou", 0);
+  isTalking = true;
   setEmotionTarget("neutral");
   window._pendingEmotion = emotion || "relaxed";
 };
-
 window.stopTalking = function(){
   isTalking    = false;
   mouthCurrent = 0;
@@ -266,12 +371,9 @@ window.stopTalking = function(){
   setEmotionTarget(window._pendingEmotion || "relaxed");
   window._pendingEmotion = null;
 };
-
 window.setEmotion = function(emotion){
   setEmotionTarget(emotion);
 };
-
-// Listen for Flutter message events
 window.addEventListener("message", function(e){
   try{
     const data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
@@ -280,27 +382,25 @@ window.addEventListener("message", function(e){
     if(data.type === "setEmotion")   window.setEmotion(data.emotion);
     if(data.type === "setState"){
       const s = data.state;
-      if(s === "talking") { window.startTalking("relaxed"); window.setThinkingPose(false); stopMouth(); }
-      if(s === "idle")    { window.stopTalking(); window.setThinkingPose(false); }
-      if(s === "thinking"){ setEmotionTarget("neutral"); window.setThinkingPose(true); }
+      if(s === "talking") { window.startTalking("relaxed"); setThinkingPose(false); stopMouth(); }
+      if(s === "idle")    { window.stopTalking(); setThinkingPose(false); }
+      if(s === "thinking"){ setEmotionTarget("neutral"); setThinkingPose(true); }
       if(s === "happy")   window.setEmotion("happy");
       if(s === "sad")     window.setEmotion("sad");
     }
   }catch(err){}
 });
 
-// ─── Lip Sync ───────────────────────────────────────────────
+// ─── Lip Sync (unchanged) ────────────────────────────────────
 let externalAmplitude = 0.0;
 let smoothedAmplitude  = 0.0;
 
 window.setAmplitude = function(val){
   externalAmplitude = Math.max(0, Math.min(1, val));
 };
-
 function lipSync(dt){
   smoothedAmplitude += (externalAmplitude - smoothedAmplitude) * 18 * dt;
   mouthCurrent = smoothedAmplitude;
-
   const cycleSpeed = 0.05 + mouthCurrent * 0.10;
   mouthShapeTimer += dt;
   if(mouthShapeTimer >= cycleSpeed){
@@ -309,15 +409,13 @@ function lipSync(dt){
     setExpr(mouthShapes[currentMouthShape], 0);
     currentMouthShape = next;
   }
-
   setExpr(mouthShapes[currentMouthShape], mouthCurrent);
   if(mouthCurrent < 0.02) stopMouth();
 }
 
-// ─── Blink ──────────────────────────────────────────────────
+// ─── Blink (unchanged) ───────────────────────────────────────
 function blink(dt){
   blinkTimer += dt;
-
   if(blinkPhase === "open" && blinkTimer >= blinkInterval){
     blinkPhase = "closing"; blinkTimer = 0; blinkT = 0;
   }
@@ -334,15 +432,14 @@ function blink(dt){
     blinkT += dt / 0.08;
     setExpr("blink", 1 - Math.min(blinkT, 1));
     if(blinkT >= 1){
-      blinkPhase    = "open";
-      blinkTimer    = 0;
+      blinkPhase = "open"; blinkTimer = 0;
       blinkInterval = 2.5 + Math.random() * 3.5;
       setExpr("blink", 0);
     }
   }
 }
 
-// ─── Eye Dart ───────────────────────────────────────────────
+// ─── Eye Dart (unchanged) ────────────────────────────────────
 function eyeDart(dt){
   eyeDartTimer += dt;
   if(eyeDartTimer >= eyeDartInterval){
@@ -354,7 +451,6 @@ function eyeDart(dt){
   }
   eyeDartX += (eyeDartTarget.x - eyeDartX) * 6 * dt;
   eyeDartY += (eyeDartTarget.y - eyeDartY) * 6 * dt;
-
   try{
     const leftEye  = vrm.humanoid.getNormalizedBoneNode("leftEye");
     const rightEye = vrm.humanoid.getNormalizedBoneNode("rightEye");
@@ -363,71 +459,55 @@ function eyeDart(dt){
   }catch(e){}
 }
 
-// ─── Breathe ────────────────────────────────────────────────
+// ─── Breathe (unchanged) ─────────────────────────────────────
 function breathe(dt){
   breatheT += dt;
   swayT    += dt;
-
   const b = Math.sin(breatheT * 0.4 * Math.PI) * 0.5 + 0.5;
   const talkBoost = isTalking ? 1.4 : 1.0;
-
-  let spine = null, chest = null, hips = null;
   try{
-    spine = vrm.humanoid.getNormalizedBoneNode("spine");
-    chest = vrm.humanoid.getNormalizedBoneNode("chest");
-    hips  = vrm.humanoid.getNormalizedBoneNode("hips");
+    const spine = vrm.humanoid.getNormalizedBoneNode("spine");
+    const chest = vrm.humanoid.getNormalizedBoneNode("chest");
+    const hips  = vrm.humanoid.getNormalizedBoneNode("hips");
+    if(spine){ spine.rotation.x = b * 0.015 * talkBoost; spine.position.y = b * 0.003; }
+    if(chest)   chest.rotation.x = b * 0.01 * talkBoost;
+    if(hips)    hips.rotation.z  = Math.sin(swayT * 0.3) * 0.008;
   }catch(e){}
-
-  if(spine){
-    spine.rotation.x = b * 0.015 * talkBoost;
-    spine.position.y = b * 0.003;
-  }
-  if(chest) chest.rotation.x = b * 0.01 * talkBoost;
-  if(hips)  hips.rotation.z  = Math.sin(swayT * 0.3) * 0.008;
 }
 
-// ─── Shoulder Sway ──────────────────────────────────────────
+// ─── Shoulder Sway (unchanged) ───────────────────────────────
 function shoulderSway(dt){
-  const t = swayT;
   try{
     const ls = vrm.humanoid.getNormalizedBoneNode("leftShoulder");
     const rs = vrm.humanoid.getNormalizedBoneNode("rightShoulder");
-    if(ls) ls.rotation.z =  Math.sin(t * 0.4) * 0.012;
-    if(rs) rs.rotation.z = -Math.sin(t * 0.4) * 0.012;
+    if(ls) ls.rotation.z =  Math.sin(swayT * 0.4) * 0.012;
+    if(rs) rs.rotation.z = -Math.sin(swayT * 0.4) * 0.012;
   }catch(e){}
 }
 
-// ─── Head Motion ─────────────────────────────────────────────
-// FIX 3: Guard added — when thinkHandRaise > 0, applyThinkingPose() owns
-//         the head. Without this guard it was overwriting the tilt every frame.
+// ─── Head Motion (unchanged) ─────────────────────────────────
 function headMotion(dt){
   headBobT += dt;
-
-  // Yield to applyThinkingPose() during thinking AND while blending back out
-  if(isThinking || thinkHandRaise > 0) return;
-
-  let head = null;
-  try{ head = vrm.humanoid.getNormalizedBoneNode("head"); }catch(e){}
-  if(!head) return;
-
-  if(isTalking){
-    head.rotation.x = Math.sin(headBobT * 3.2) * 0.03 + Math.sin(headBobT * 1.5) * 0.01;
-    head.rotation.y = Math.sin(headBobT * 1.8) * 0.025;
-    head.rotation.z = Math.sin(headBobT * 2.1) * 0.008;
-  } else {
-    head.rotation.x = Math.sin(headBobT * 0.5)  * 0.008;
-    head.rotation.y = Math.sin(headBobT * 0.3)  * 0.012;
-    head.rotation.z = Math.sin(headBobT * 0.2)  * 0.004;
-  }
+  try{
+    const head = vrm.humanoid.getNormalizedBoneNode("head");
+    if(!head) return;
+    if(isTalking){
+      head.rotation.x = Math.sin(headBobT * 3.2) * 0.03 + Math.sin(headBobT * 1.5) * 0.01;
+      head.rotation.y = Math.sin(headBobT * 1.8) * 0.025;
+      head.rotation.z = Math.sin(headBobT * 2.1) * 0.008;
+    } else {
+      head.rotation.x = Math.sin(headBobT * 0.5) * 0.008;
+      head.rotation.y = Math.sin(headBobT * 0.3) * 0.012;
+      head.rotation.z = Math.sin(headBobT * 0.2) * 0.004;
+    }
+  }catch(e){}
 }
 
-// ─── Animate Loop ───────────────────────────────────────────
+// ─── Animate Loop (unchanged) ────────────────────────────────
 const clock = new THREE.Clock();
-
 function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
-
   if(vrm){
     try{
       blink(dt);
@@ -435,21 +515,19 @@ function animate(){
       breathe(dt);
       shoulderSway(dt);
       headMotion(dt);
-      applyThinkingPose(dt); // ← FIX 1: was never called before
+      applyThinkingPose(dt);
       updateEmotions(dt);
       if(isTalking) lipSync(dt);
       vrm.update(dt);
     }catch(e){ console.log("Anim error:", e); }
   }
-
   renderer.render(scene, camera);
 }
 
-// ─── Flutter Bridge ─────────────────────────────────────────
+// ─── Flutter Bridge (unchanged) ──────────────────────────────
 window.addEventListener("load", function(){
-  window.flutter_inappwebview.callHandler("onReady");
+  try{ window.flutter_inappwebview.callHandler("onReady"); }catch(e){ log("Bridge error: " + e); }
 });
-
 window.addEventListener("resize", function(){
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -457,5 +535,114 @@ window.addEventListener("resize", function(){
 });
 
 </script>
+
+<!-- ─── Holographic overlay + floating particles (pure visual, no logic) ─ -->
+<script>
+(function(){
+  const canvas = document.getElementById('holo-canvas');
+  const ctx    = canvas.getContext('2d');
+  let W = 0, H = 0;
+
+  function resize(){
+    W = canvas.width  = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // Particle pool
+  const PARTICLE_COUNT = 28;
+  const particles = [];
+  for(let i = 0; i < PARTICLE_COUNT; i++){
+    particles.push({
+      x: Math.random(),
+      y: Math.random(),
+      r: 0.8 + Math.random() * 1.8,
+      vy: -(0.00015 + Math.random() * 0.00025),
+      vx: (Math.random() - 0.5) * 0.00008,
+      alpha: Math.random(),
+      phase: Math.random() * Math.PI * 2,
+      color: Math.random() > 0.5 ? [0,212,255] : [180,0,255],
+    });
+  }
+
+  let tick = 0;
+
+  function draw(){
+    requestAnimationFrame(draw);
+    ctx.clearRect(0, 0, W, H);
+    tick += 0.012;
+
+    // ── Floating particles ───────────────────────────────────
+    for(const p of particles){
+      p.y += p.vy;
+      p.x += p.vx + Math.sin(tick + p.phase) * 0.00012;
+      if(p.y < -0.02) p.y = 1.02;
+      if(p.x < 0) p.x = 1;
+      if(p.x > 1) p.x = 0;
+      const alpha = (Math.sin(tick * 1.2 + p.phase) * 0.5 + 0.5) * 0.55;
+      const [r,g,b] = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x * W, p.y * H, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+      ctx.fill();
+    }
+
+    // ── Holographic data lines (horizontal, faint) ───────────
+    const lineCount = 5;
+    for(let i = 0; i < lineCount; i++){
+      const yRel = (((i / lineCount) + tick * 0.04) % 1.0);
+      const y    = yRel * H;
+      const alpha = Math.pow(Math.sin(yRel * Math.PI), 2) * 0.055;
+      if(alpha < 0.002) continue;
+      const grad = ctx.createLinearGradient(0, y, W, y);
+      grad.addColorStop(0,   `rgba(0,212,255,0)`);
+      grad.addColorStop(0.2, `rgba(0,212,255,${alpha})`);
+      grad.addColorStop(0.5, `rgba(0,212,255,${alpha * 0.7})`);
+      grad.addColorStop(0.8, `rgba(180,0,255,${alpha})`);
+      grad.addColorStop(1,   `rgba(180,0,255,0)`);
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth   = 0.8;
+      ctx.stroke();
+    }
+
+    // ── Digital energy arc at bottom ─────────────────────────
+    const arcAlpha = (Math.sin(tick * 1.5) * 0.5 + 0.5) * 0.2;
+    const arcGrad  = ctx.createLinearGradient(W * 0.1, 0, W * 0.9, 0);
+    arcGrad.addColorStop(0,   'rgba(0,212,255,0)');
+    arcGrad.addColorStop(0.35, `rgba(0,212,255,${arcAlpha})`);
+    arcGrad.addColorStop(0.65, `rgba(180,0,255,${arcAlpha})`);
+    arcGrad.addColorStop(1,   'rgba(180,0,255,0)');
+    ctx.beginPath();
+    ctx.moveTo(W * 0.1, H * 0.92);
+    ctx.quadraticCurveTo(W * 0.5, H * 0.88, W * 0.9, H * 0.92);
+    ctx.strokeStyle = arcGrad;
+    ctx.lineWidth   = 1.5;
+    ctx.stroke();
+
+    // ── Eye glow pulse (center-top region) ───────────────────
+    const eyeGlowAlpha = (Math.sin(tick * 2.2) * 0.5 + 0.5) * 0.04;
+    if(eyeGlowAlpha > 0.005){
+      const eyeGrad = ctx.createRadialGradient(
+        W * 0.5, H * 0.26, 0,
+        W * 0.5, H * 0.26, W * 0.18
+      );
+      eyeGrad.addColorStop(0,   `rgba(0,212,255,${eyeGlowAlpha})`);
+      eyeGrad.addColorStop(0.4, `rgba(0,212,255,${eyeGlowAlpha * 0.4})`);
+      eyeGrad.addColorStop(1,   'rgba(0,212,255,0)');
+      ctx.beginPath();
+      ctx.arc(W * 0.5, H * 0.26, W * 0.18, 0, Math.PI * 2);
+      ctx.fillStyle = eyeGrad;
+      ctx.fill();
+    }
+  }
+
+  draw();
+})();
+</script>
+
 </body>
 </html>

@@ -19,9 +19,6 @@ class LuckyAvatarState extends State<LuckyAvatar> {
   String? _vrmBase64;
   bool _vrmReady = false;
 
-  // FIX: queue holds any JS calls made before _vrmReady is true
-  final List<String> _jsQueue = [];
-
   // Lip sync amplitude simulation
   Timer? _ampTimer;
   double _ampPhase = 0.0;
@@ -54,69 +51,52 @@ class LuckyAvatarState extends State<LuckyAvatar> {
 
   void _sendState(LuckyState state) {
     final msg = jsonEncode({'type': 'setState', 'state': state.name});
-    _js(
-      "window.dispatchEvent(new MessageEvent('message', {data:'${msg.replaceAll("'", "\\'")}'}));",
+    _webViewController?.evaluateJavascript(
+      source:
+          "window.dispatchEvent(new MessageEvent('message', {data:'$msg'}));",
     );
   }
 
-  // ── Public API ──────────────────────────────────────────────────────────────
-
-  /// Called by TTSService.setStartHandler
+  // Called by TTSService.setStartHandler
   void startTalking() {
     _js("window.startTalking('neutral')");
     _startAmplitude();
   }
 
-  /// Called by TTSService.setCompletionHandler
+  // Called by TTSService.setCompletionHandler
   void stopTalking() {
     _stopAmplitude();
     _js("window.setAmplitude(0)");
+    // Small delay so mouth closes smoothly
     Future.delayed(const Duration(milliseconds: 150), () {
       _js("window.stopTalking()");
     });
   }
 
-  /// FIX: setThinking() — queue-safe, replaces bare pushJs("setThinkingPose(...)")
-  /// Call this BEFORE awaiting the backend so the pose shows immediately.
+  // Public JS executor for direct calls from home_screen
   void setThinking(bool active) {
     _js("window.setThinkingPose(${active ? 'true' : 'false'})");
   }
 
-  /// Public JS executor for direct calls from home_screen (kept for compatibility)
   void pushJs(String code) => _js(code);
 
-  /// Called by home_screen amplitude callback
+  // Called by home_screen amplitude callback
   void pushAmplitude(double amp) {
     _js("window.setAmplitude($amp)");
   }
 
-  // ── Internal JS bridge ──────────────────────────────────────────────────────
-
-  /// FIX: _js() now queues calls if VRM isn't ready yet.
-  /// Previously pushJs() fired immediately — calls during page load were lost.
   void _js(String code) {
-    if (_vrmReady && _webViewController != null) {
-      _webViewController!.evaluateJavascript(source: code);
-    } else {
-      _jsQueue.add(code);
-    }
+    _webViewController?.evaluateJavascript(source: code);
   }
 
-  /// Flush the queue once the VRM signals it's ready
-  void _flushQueue() {
-    for (final code in _jsQueue) {
-      _webViewController?.evaluateJavascript(source: code);
-    }
-    _jsQueue.clear();
-  }
-
-  // ── Amplitude simulation ────────────────────────────────────────────────────
-
+  // Simulate amplitude since flutter_tts has no audio stream
+  // Uses layered sine waves to mimic natural speech rhythm
   void _startAmplitude() {
     _ampTimer?.cancel();
     _ampPhase = 0.0;
     _ampTimer = Timer.periodic(const Duration(milliseconds: 40), (t) {
       _ampPhase += 0.04;
+      // Layered sines = natural speech-like movement
       final amp =
           (0.45 +
                   0.30 * sin(_ampPhase * 4.1) +
@@ -132,8 +112,6 @@ class LuckyAvatarState extends State<LuckyAvatar> {
     _ampTimer?.cancel();
     _ampTimer = null;
   }
-
-  // ── VRM loading ─────────────────────────────────────────────────────────────
 
   void _onPageReady() {
     if (_vrmBase64 == null) return;
@@ -158,11 +136,7 @@ class LuckyAvatarState extends State<LuckyAvatar> {
       );
       offset = end;
     }
-
-    // FIX: _vrmReady is now set here (after VRM is sent), and the queue is
-    // flushed so any setThinking() calls made during page load are replayed.
     _vrmReady = true;
-    _flushQueue();
   }
 
   Future<void> _loadHtmlWithBase() async {
@@ -178,13 +152,11 @@ class LuckyAvatarState extends State<LuckyAvatar> {
     );
   }
 
-  // ── Build ───────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      height: 420,
+      height: double.infinity,
       child: InAppWebView(
         initialSettings: InAppWebViewSettings(
           transparentBackground: true,
@@ -203,16 +175,10 @@ class LuckyAvatarState extends State<LuckyAvatar> {
           _loadHtmlWithBase();
         },
         onLoadStop: (controller, url) => _sendState(widget.state),
-        onConsoleMessage: (controller, msg) {
-          // Only print warnings/errors — suppress per-frame logs that flood console
-          if (msg.messageLevel == ConsoleMessageLevel.WARNING ||
-              msg.messageLevel == ConsoleMessageLevel.ERROR ||
-              msg.messageLevel == ConsoleMessageLevel.TIP) {
-            debugPrint('[WebView] ${msg.message}');
-          }
-        },
+        onConsoleMessage: (controller, msg) =>
+            debugPrint('[WebView] \${msg.message}'),
         onReceivedError: (controller, request, error) =>
-            debugPrint('[WebView ERROR] ${error.description}'),
+            debugPrint('[WebView ERROR] \${error.description}'),
       ),
     );
   }
