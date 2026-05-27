@@ -17,17 +17,20 @@ class LuckyAvatar extends StatefulWidget {
 class LuckyAvatarState extends State<LuckyAvatar> {
   InAppWebViewController? _webViewController;
   String? _vrmBase64;
-  bool _vrmReady = false;
+  bool _vrmReady = false; // true only after VRM fully parsed in JS
+  bool _pageLoaded = false; // true after HTML page load fires
+  final List<String> _jsQueue = [];
 
-  // Lip sync amplitude simulation
+  // Lip sync
   Timer? _ampTimer;
   double _ampPhase = 0.0;
   final Random _rand = Random();
+  bool _isTalkingLocally = false;
 
   @override
   void initState() {
     super.initState();
-    _loadVrmAsBase64();
+    _loadVrm();
   }
 
   @override
@@ -36,74 +39,132 @@ class LuckyAvatarState extends State<LuckyAvatar> {
     super.dispose();
   }
 
-  Future<void> _loadVrmAsBase64() async {
+  // ── Load VRM bytes ───────────────────────────────────────────────────────
+  Future<void> _loadVrm() async {
     final bytes = await rootBundle.load('assets/avatar/Lucky.vrm');
     _vrmBase64 = base64Encode(bytes.buffer.asUint8List());
+    // If page already loaded before VRM finished encoding, send now
+    if (_pageLoaded && !_vrmReady) _sendVrmChunks();
   }
 
+  // ── Send VRM in async chunks so UI thread is never blocked ──────────────
+  Future<void> _sendVrmChunks() async {
+    if (_vrmBase64 == null || _webViewController == null) return;
+
+    const chunkSize = 300000;
+    final total = _vrmBase64!.length;
+
+    await _webViewController!.evaluateJavascript(
+      source: "window.vrmChunks=[]; window.vrmTotal=$total;",
+    );
+
+    int offset = 0;
+    while (offset < total) {
+      final end = (offset + chunkSize > total) ? total : offset + chunkSize;
+      final chunk = _vrmBase64!.substring(offset, end);
+      final isLast = end >= total;
+
+      await _webViewController!.evaluateJavascript(
+        source: isLast
+            ? "window.vrmChunks.push('$chunk'); window.receiveVRM(window.vrmChunks.join(''));"
+            : "window.vrmChunks.push('$chunk');",
+      );
+
+      offset = end;
+      if (!isLast) await Future.delayed(const Duration(milliseconds: 8));
+    }
+  }
+
+  // ── Called by JS handler 'onVRMReady' ────────────────────────────────────
+  void _onVRMReady() {
+    _vrmReady = true;
+    _flushQueue();
+  }
+
+  void _flushQueue() {
+    for (final code in _jsQueue) {
+      _webViewController?.evaluateJavascript(source: code);
+    }
+    _jsQueue.clear();
+  }
+
+  // ── State changes ────────────────────────────────────────────────────────
   @override
   void didUpdateWidget(LuckyAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.state != widget.state) {
-      _sendState(widget.state);
-    }
+    if (oldWidget.state != widget.state) _sendState(widget.state);
   }
 
   void _sendState(LuckyState state) {
     final msg = jsonEncode({'type': 'setState', 'state': state.name});
-    _webViewController?.evaluateJavascript(
-      source:
-          "window.dispatchEvent(new MessageEvent('message', {data:'$msg'}));",
-    );
+    final escaped = msg.replaceAll("'", "\\'");
+    _js("window.dispatchEvent(new MessageEvent('message',{data:'$escaped'}));");
   }
 
-  // Called by TTSService.setStartHandler
+  // ── Public API ───────────────────────────────────────────────────────────
+
   void startTalking() {
+    _isTalkingLocally = true;
     _js("window.startTalking('neutral')");
     _startAmplitude();
   }
 
-  // Called by TTSService.setCompletionHandler
   void stopTalking() {
+    _isTalkingLocally = false;
     _stopAmplitude();
     _js("window.setAmplitude(0)");
-    // Small delay so mouth closes smoothly
     Future.delayed(const Duration(milliseconds: 150), () {
-      _js("window.stopTalking()");
+      if (!_isTalkingLocally) _js("window.stopTalking()");
     });
   }
 
-  // Public JS executor for direct calls from home_screen
   void setThinking(bool active) {
     _js("window.setThinkingPose(${active ? 'true' : 'false'})");
   }
 
   void pushJs(String code) => _js(code);
 
-  // Called by home_screen amplitude callback
+  /// Called by TTSService amplitude callback
   void pushAmplitude(double amp) {
+    if (!_isTalkingLocally) return;
     _js("window.setAmplitude($amp)");
   }
 
+  // ── JS bridge — queues until VRM ready ──────────────────────────────────
   void _js(String code) {
-    _webViewController?.evaluateJavascript(source: code);
+    if (_vrmReady && _webViewController != null) {
+      _webViewController!.evaluateJavascript(source: code);
+    } else {
+      if (code.startsWith("window.setAmplitude")) {
+        _jsQueue.removeWhere((c) => c.startsWith("window.setAmplitude"));
+      }
+      _jsQueue.add(code);
+    }
   }
 
-  // Simulate amplitude since flutter_tts has no audio stream
-  // Uses layered sine waves to mimic natural speech rhythm
+  // ── Amplitude simulation ─────────────────────────────────────────────────
   void _startAmplitude() {
     _ampTimer?.cancel();
     _ampPhase = 0.0;
-    _ampTimer = Timer.periodic(const Duration(milliseconds: 40), (t) {
-      _ampPhase += 0.04;
-      // Layered sines = natural speech-like movement
-      final amp =
-          (0.45 +
-                  0.30 * sin(_ampPhase * 4.1) +
-                  0.15 * sin(_ampPhase * 9.3) +
-                  0.10 * sin(_ampPhase * 17.7) +
-                  0.05 * (_rand.nextDouble() - 0.5))
-              .clamp(0.05, 1.0);
+    _ampTimer = Timer.periodic(const Duration(milliseconds: 60), (t) {
+      if (!_isTalkingLocally) {
+        t.cancel();
+        _ampTimer = null;
+        return;
+      }
+      _ampPhase += 0.06;
+
+      final syllable = 0.38 * sin(_ampPhase * 1.9);
+      final word = 0.22 * sin(_ampPhase * 6.9);
+      final flutter = 0.10 * sin(_ampPhase * 22.0);
+      final noise = 0.05 * (_rand.nextDouble() - 0.5);
+      final breath = 0.5 + 0.5 * sin(_ampPhase * 0.4);
+
+      final amp = ((syllable + word + flutter + noise) * breath + 0.30).clamp(
+        0.04,
+        0.95,
+      );
+
       _js("window.setAmplitude($amp)");
     });
   }
@@ -113,45 +174,7 @@ class LuckyAvatarState extends State<LuckyAvatar> {
     _ampTimer = null;
   }
 
-  void _onPageReady() {
-    if (_vrmBase64 == null) return;
-    const chunkSize = 500000;
-    final total = _vrmBase64!.length;
-    int offset = 0;
-
-    _webViewController?.evaluateJavascript(
-      source: "window.vrmChunks = []; window.vrmTotal = $total;",
-    );
-
-    while (offset < total) {
-      final end = (offset + chunkSize > total) ? total : offset + chunkSize;
-      final chunk = _vrmBase64!.substring(offset, end);
-      final isLast = end >= total;
-      _webViewController?.evaluateJavascript(
-        source:
-            """
-          window.vrmChunks.push('$chunk');
-          ${isLast ? 'window.receiveVRM(window.vrmChunks.join(""));' : ''}
-        """,
-      );
-      offset = end;
-    }
-    _vrmReady = true;
-  }
-
-  Future<void> _loadHtmlWithBase() async {
-    final html = await rootBundle.loadString('assets/avatar/lucky_viewer.html');
-    await _webViewController?.loadData(
-      data: html,
-      mimeType: 'text/html',
-      encoding: 'utf-8',
-      baseUrl: WebUri('file:///android_asset/flutter_assets/assets/avatar/'),
-      historyUrl: WebUri(
-        'file:///android_asset/flutter_assets/assets/avatar/lucky_viewer.html',
-      ),
-    );
-  }
-
+  // ── Build ────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return SizedBox(
@@ -165,20 +188,52 @@ class LuckyAvatarState extends State<LuckyAvatar> {
           allowFileAccess: true,
           allowFileAccessFromFileURLs: true,
           allowUniversalAccessFromFileURLs: true,
+          // FIX: useHybridComposition: false — hybrid composition causes the
+          // WebView surface to be destroyed when the soft keyboard opens,
+          // which crashes/blanks the VRM view on Adreno GPUs (Moto g96 5G).
+          // Setting to false uses the standard TextureView path which is
+          // stable with keyboard open/close events.
+          useHybridComposition: false, // ← FIXED (was true)
         ),
         onWebViewCreated: (controller) {
           _webViewController = controller;
+
           controller.addJavaScriptHandler(
-            handlerName: 'onReady',
-            callback: (args) => _onPageReady(),
+            handlerName: 'onVRMReady',
+            callback: (_) => _onVRMReady(),
           );
-          _loadHtmlWithBase();
+
+          _loadHtml();
         },
-        onLoadStop: (controller, url) => _sendState(widget.state),
-        onConsoleMessage: (controller, msg) =>
-            debugPrint('[WebView] \${msg.message}'),
+        onLoadStop: (controller, url) async {
+          _pageLoaded = true;
+          if (_vrmBase64 != null) {
+            await _sendVrmChunks();
+          }
+          _sendState(widget.state);
+        },
+        onConsoleMessage: (controller, msg) {
+          // Only log warnings/errors to reduce logcat noise
+          if (msg.messageLevel == ConsoleMessageLevel.WARNING ||
+              msg.messageLevel == ConsoleMessageLevel.ERROR) {
+            debugPrint('[WebView] ${msg.message}');
+          }
+        },
         onReceivedError: (controller, request, error) =>
-            debugPrint('[WebView ERROR] \${error.description}'),
+            debugPrint('[WebView ERROR] ${error.description}'),
+      ),
+    );
+  }
+
+  Future<void> _loadHtml() async {
+    final html = await rootBundle.loadString('assets/avatar/lucky_viewer.html');
+    await _webViewController?.loadData(
+      data: html,
+      mimeType: 'text/html',
+      encoding: 'utf-8',
+      baseUrl: WebUri('file:///android_asset/flutter_assets/assets/avatar/'),
+      historyUrl: WebUri(
+        'file:///android_asset/flutter_assets/assets/avatar/lucky_viewer.html',
       ),
     );
   }

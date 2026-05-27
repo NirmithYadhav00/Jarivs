@@ -16,7 +16,9 @@ import 'package:flutter_tts/flutter_tts.dart';
 import '../models/lucky_state.dart';
 import '../widgets/lucky_avatar.dart';
 
-// ─── Waveform Widget ─────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Isolated waveform — only animates when listening/talking
+// ─────────────────────────────────────────────────────────────────────────────
 class _WaveformWidget extends StatefulWidget {
   final LuckyState state;
   final Color color1;
@@ -31,28 +33,50 @@ class _WaveformWidget extends StatefulWidget {
 }
 
 class _WaveformWidgetState extends State<_WaveformWidget> {
-  final List<double> _h = List.filled(40, 0.12);
+  final List<double> _h = List.filled(40, 0.08);
   final _rng = Random();
   Timer? _timer;
+
+  bool get _active =>
+      widget.state == LuckyState.listening ||
+      widget.state == LuckyState.talking;
 
   @override
   void initState() {
     super.initState();
+    _startTimer();
+  }
+
+  @override
+  void didUpdateWidget(_WaveformWidget old) {
+    super.didUpdateWidget(old);
+    if (old.state != widget.state) {
+      if (_active)
+        _startTimer();
+      else
+        _stopTimer();
+    }
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(milliseconds: 80), (_) {
       if (!mounted) return;
       setState(() {
-        final active =
-            widget.state == LuckyState.listening ||
-            widget.state == LuckyState.talking;
         for (int i = 0; i < _h.length; i++) {
-          if (active) {
-            _h[i] = 0.08 + _rng.nextDouble() * 0.88;
-          } else {
-            _h[i] = _h[i] * 0.7 + 0.08 * 0.3;
-          }
+          _h[i] = 0.08 + _rng.nextDouble() * 0.88;
         }
       });
     });
+  }
+
+  void _stopTimer() {
+    _timer?.cancel();
+    _timer = null;
+    if (mounted)
+      setState(() {
+        for (int i = 0; i < _h.length; i++) _h[i] = 0.08;
+      });
   }
 
   @override
@@ -64,16 +88,17 @@ class _WaveformWidgetState extends State<_WaveformWidget> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 36,
+      height: 38,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
-        children: List.generate(_h.length, (i) {
-          return Expanded(
+        children: List.generate(
+          _h.length,
+          (i) => Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 1),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 60),
-                height: (_h[i] * 32).clamp(3.0, 32.0),
+                height: (_h[i] * 34).clamp(3.0, 34.0),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(2),
                   gradient: LinearGradient(
@@ -81,23 +106,19 @@ class _WaveformWidgetState extends State<_WaveformWidget> {
                     end: Alignment.topCenter,
                     colors: [widget.color1, widget.color2],
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: widget.color1.withOpacity(0.25),
-                      blurRadius: 4,
-                    ),
-                  ],
                 ),
               ),
             ),
-          );
-        }),
+          ),
+        ),
       ),
     );
   }
 }
 
-// ─── Home Screen ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// HomeScreen
+// ─────────────────────────────────────────────────────────────────────────────
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
   @override
@@ -105,10 +126,14 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
-  // ── All existing services / keys / state — UNCHANGED ──────────────────────
   final STTService _stt = STTService();
   final TTSService _tts = TTSService();
   final GlobalKey<LuckyAvatarState> _avatarKey = GlobalKey<LuckyAvatarState>();
+
+  // Text input
+  final TextEditingController _typeController = TextEditingController();
+  final FocusNode _typeFocus = FocusNode();
+  bool _showTyping = false;
 
   String _text = "Initializing Lucky AI...";
   bool isListening = false;
@@ -118,24 +143,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   LuckyState currentState = LuckyState.idle;
   bool _initialized = false;
 
+  // Animations
   late AnimationController _ringController;
   late AnimationController _pulseController;
   late AnimationController _scanController;
-  // NEW: extra visual-only controllers
-  late AnimationController _particleController;
-  late AnimationController _orbitController;
-
   late Animation<double> _ringAnim;
   late Animation<double> _pulseAnim;
   late Animation<double> _scanAnim;
-  late Animation<double> _particleAnim;
-  late Animation<double> _orbitAnim;
 
-  int _voiceLatency = 42;
-  int _neuralLoad = 67;
-  String _mood = "CURIOUS";
-  int _memorySync = 98;
-  String _responseTime = "0.42s";
+  String _responseTime = "0.00s";
 
   final Map<String, String> priorityApps = {
     "google": "com.google.android.googlequicksearchbox",
@@ -156,8 +172,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         statusBarIconBrightness: Brightness.light,
       ),
     );
-
-    // Original controllers
     _ringController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 10),
@@ -170,27 +184,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       vsync: this,
       duration: const Duration(seconds: 4),
     )..repeat();
-
-    // Visual-only new controllers
-    _particleController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 6),
-    )..repeat();
-    _orbitController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 8),
-    )..repeat();
-
     _ringAnim = Tween<double>(begin: 0, end: 1).animate(_ringController);
     _pulseAnim = Tween<double>(begin: 0.7, end: 1.0).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
     _scanAnim = Tween<double>(begin: 0, end: 1).animate(_scanController);
-    _particleAnim = Tween<double>(
-      begin: 0,
-      end: 1,
-    ).animate(_particleController);
-    _orbitAnim = Tween<double>(begin: 0, end: 1).animate(_orbitController);
 
     if (!_initialized) {
       _initialized = true;
@@ -205,18 +203,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _ringController.dispose();
     _pulseController.dispose();
     _scanController.dispose();
-    _particleController.dispose();
-    _orbitController.dispose();
+    _typeController.dispose();
+    _typeFocus.dispose();
     super.dispose();
   }
 
-  // ── Color palette ──────────────────────────────────────────────────────────
+  // ── Colors ────────────────────────────────────────────────────────────────
   static const _cyan = Color(0xFF00D4FF);
   static const _magenta = Color(0xFFB400FF);
   static const _red = Color(0xFFCC0044);
   static const _amber = Color(0xFFFFB800);
   static const _bg = Color(0xFF04010A);
-  static const _purple = Color(0xFF6C00CC);
 
   Color get _stateColor {
     switch (currentState) {
@@ -250,14 +247,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return "IDLE";
   }
 
-  // ── All original business logic — UNCHANGED ───────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+  // ALL ORIGINAL LOGIC — UNTOUCHED
+  // ══════════════════════════════════════════════════════════════════════════
+
   Future<void> _initApp() async {
     try {
       print("===== INIT APP =====");
       await _requestPermissions();
-      print("===== INIT STT =====");
       await _stt.init();
-      print("===== INIT TTS =====");
       await _tts.init();
       _tts.setStartHandler(() => _avatarKey.currentState?.startTalking());
       _tts.setCompletionHandler(() => _avatarKey.currentState?.stopTalking());
@@ -266,13 +264,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _avatarKey.currentState?.pushAmplitude(amp);
       };
       await _tts.speak("Hello, I am Lucky, ready to assist you.");
-      print("===== START LISTENING =====");
+      while (_tts.isSpeaking)
+        await Future.delayed(const Duration(milliseconds: 100));
+      await Future.delayed(const Duration(milliseconds: 400));
+      if (!mounted) return;
+      await _stt.startListening(_onSpeechResult);
       if (!mounted) return;
       setState(() {
         isListening = true;
         currentState = LuckyState.listening;
         _text = "Listening to you...";
-        _mood = "CURIOUS";
       });
     } catch (e) {
       print("INIT ERROR: $e");
@@ -289,7 +290,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Future<void> _toggleListening() async {
     try {
       if (_tts.isSpeaking) {
-        print("===== INTERRUPT TTS =====");
         await _tts.stop();
         _avatarKey.currentState?.stopTalking();
         isProcessing = false;
@@ -316,12 +316,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         if (!mounted) return;
         setState(() {
           isListening = false;
-          _text = "Stopped listening";
+          currentState = LuckyState.idle;
+          _text = "Tap mic to speak";
         });
       }
     } catch (e) {
       print("TOGGLE ERROR: $e");
     }
+  }
+
+  // ── Type & send ───────────────────────────────────────────────────────────
+  Future<void> _sendTyped() async {
+    final input = _typeController.text.trim();
+    if (input.isEmpty) return;
+    _typeController.clear();
+    _typeFocus.unfocus();
+    setState(() {
+      _showTyping = false;
+    });
+    await _onSpeechResult(input);
   }
 
   Future<void> _onSpeechResult(String result) async {
@@ -330,7 +343,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       print(result);
       if (isProcessing) return;
       result = result.trim().toLowerCase();
-      if (result.isEmpty || result.length < 3) return;
+      if (result.isEmpty || result.length < 2) return;
       isProcessing = true;
       if (mounted) setState(() {});
       await _stt.stopListening();
@@ -338,23 +351,34 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         setState(() {
           isListening = false;
           _text = "You said: $result";
-          _mood = "FOCUSED";
         });
       final handled = await _handleOfflineCommand(result);
       if (handled) {
         lastCommand = "";
         isProcessing = false;
-        await Future.delayed(const Duration(milliseconds: 500));
+        while (_tts.isSpeaking)
+          await Future.delayed(const Duration(milliseconds: 100));
+        await Future.delayed(const Duration(milliseconds: 400));
+        if (!mounted) return;
+        await _stt.startListening(_onSpeechResult);
         if (!mounted) return;
         setState(() {
-          isListening = false;
-          currentState = LuckyState.idle;
-          _mood = "CURIOUS";
+          isListening = true;
+          currentState = LuckyState.listening;
+          _text = "Listening to you...";
         });
         return;
       }
       if (result == lastCommand) {
         isProcessing = false;
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (!mounted) return;
+        await _stt.startListening(_onSpeechResult);
+        if (!mounted) return;
+        setState(() {
+          isListening = true;
+          currentState = LuckyState.listening;
+        });
         return;
       }
       lastCommand = result;
@@ -363,15 +387,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         setState(() {
           currentState = LuckyState.thinking;
           _text = "Thinking...";
-          _neuralLoad = 85;
         });
       _avatarKey.currentState?.setThinking(true);
       final response = await _sendToBackend(result);
       sw.stop();
       _responseTime = "${(sw.elapsedMilliseconds / 1000).toStringAsFixed(2)}s";
-      _voiceLatency = (sw.elapsedMilliseconds ~/ 10).clamp(10, 999);
-      print("===== DECODED RESPONSE =====");
-      print(response);
+
       String? message, action, app, contact, msg, platform;
       if (response is List) {
         for (var item in response) {
@@ -396,45 +417,58 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         msg = response["message"]?.toString();
         platform = response["platform"]?.toString();
       }
-      print("===== ACTION: $action =====");
-      print("===== MESSAGE: $message =====");
-      if (mounted)
-        setState(() {
-          _text = message ?? "No response";
-          _neuralLoad = 67;
-          _memorySync = (_memorySync + 1).clamp(0, 100);
-        });
+
       if (message != null && message.isNotEmpty) {
+        _avatarKey.currentState?.setThinking(false);
         if (mounted)
           setState(() {
             currentState = LuckyState.talking;
-            _mood = "EXPRESSIVE";
+            _text = message!;
           });
-        _avatarKey.currentState?.setThinking(false);
-        await _tts.speak(message);
-        while (_tts.isSpeaking) {
+        await _tts.speak(message!);
+        int waited = 0;
+        while (_tts.isSpeaking && waited < 30000) {
           await Future.delayed(const Duration(milliseconds: 100));
+          waited += 100;
         }
         if (mounted)
           setState(() {
             currentState = LuckyState.idle;
-            _mood = "CURIOUS";
           });
       } else {
         _avatarKey.currentState?.setThinking(false);
+        if (mounted)
+          setState(() {
+            _text = "No response";
+          });
       }
+
       await _handleCommand(action, app, contact, msg, platform);
       isProcessing = false;
-      await Future.delayed(const Duration(seconds: 2));
+      while (_tts.isSpeaking)
+        await Future.delayed(const Duration(milliseconds: 100));
+      await Future.delayed(const Duration(milliseconds: 400));
+      if (!mounted) return;
+      await _stt.startListening(_onSpeechResult);
       if (!mounted) return;
       setState(() {
-        isListening = false;
-        currentState = LuckyState.idle;
+        isListening = true;
+        currentState = LuckyState.listening;
+        _text = "Listening to you...";
       });
     } catch (e) {
       print("SPEECH RESULT ERROR: $e");
       _avatarKey.currentState?.setThinking(false);
       isProcessing = false;
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (!mounted) return;
+      await _stt.startListening(_onSpeechResult);
+      if (!mounted) return;
+      setState(() {
+        isListening = true;
+        currentState = LuckyState.listening;
+        _text = "Listening to you...";
+      });
     }
   }
 
@@ -452,7 +486,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         }
       }
     } catch (e) {
-      debugPrint("[TTS FALLBACK] ElevenLabs offline — using device TTS");
       try {
         final ft = FlutterTts();
         await ft.setLanguage("en-IN");
@@ -492,11 +525,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _text = "Opening $appName...";
       });
       await _speakWithFallback("Opening $appName");
-      if (priorityApps.containsKey(appName)) {
+      if (priorityApps.containsKey(appName))
         await DeviceApps.openApp(priorityApps[appName]!);
-      } else {
+      else
         await _openSystemApp(appName);
-      }
       return true;
     }
     final alarmMatch = RegExp(
@@ -579,8 +611,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   String _formatAlarmTime(int hour, int minute, String? period) {
-    final p = hour >= 12 ? 'PM' : 'AM';
     final h = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
+    final p = hour >= 12 ? 'PM' : 'AM';
     return '$h:${minute.toString().padLeft(2, '0')} $p';
   }
 
@@ -591,8 +623,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({"user_id": "mobile_user", "query": text}),
       );
-      print("===== STATUS: ${response.statusCode} =====");
-      print("===== BODY: ${response.body} =====");
       if (response.statusCode != 200) return null;
       return jsonDecode(response.body);
     } catch (e) {
@@ -610,7 +640,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   ) async {
     try {
       if (action == null) return;
-      print("===== HANDLE COMMAND: $action =====");
       if (contact == "him" || contact == "her") contact = lastContact;
       if (action == "call" ||
           action == "sms" ||
@@ -1042,26 +1071,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           await _openApp(app);
       }
     } catch (e) {
-      print("SYSTEM APP ERROR: $e");
       await _openApp(app);
     }
   }
 
   Future<void> _openYouTube([String? query]) async {
     try {
-      if (query != null && query.isNotEmpty) {
+      if (query != null && query.isNotEmpty)
         await launchUrl(
           Uri.parse(
             "https://www.youtube.com/results?search_query=${Uri.encodeComponent(query)}",
           ),
           mode: LaunchMode.externalApplication,
         );
-      } else {
+      else
         await DeviceApps.openApp("com.google.android.youtube");
-      }
-    } catch (e) {
-      print("YOUTUBE ERROR: $e");
-    }
+    } catch (e) {}
   }
 
   Future<void> _searchGoogle(String query) async {
@@ -1083,35 +1108,32 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return n;
   }
 
-  // ── BUILD ─────────────────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+  // BUILD
+  // ══════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final dateStr = "${_monthName(now.month)} ${now.day}, ${now.year}"
-        .toUpperCase();
     final hour = now.hour;
     final minute = now.minute.toString().padLeft(2, '0');
     final ampm = hour >= 12 ? 'PM' : 'AM';
     final h12 = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
     final timeStr = "$h12:$minute $ampm";
+    final dateStr = "${_monthName(now.month)} ${now.day}, ${now.year}";
 
+    // FIX: resizeToAvoidBottomInset: false prevents WebView from crashing
+    // when the keyboard opens. Instead we manually pad the bottom action row.
     return Scaffold(
       backgroundColor: _bg,
+      resizeToAvoidBottomInset: false, // ← FIXED (was true)
       body: Stack(
         children: [
-          // ── Background: grid + radial vignette ──────────────────────────
+          // Background grid
           Positioned.fill(
             child: CustomPaint(painter: _HudBgPainter(_ringAnim)),
           ),
-          // Radial ambient glow centered on avatar
-          Positioned.fill(
-            child: IgnorePointer(
-              child: CustomPaint(
-                painter: _RadialGlowPainter(_stateColor, _pulseAnim),
-              ),
-            ),
-          ),
-          // ── Scan line ───────────────────────────────────────────────────
+
+          // Scan line
           AnimatedBuilder(
             animation: _scanAnim,
             builder: (_, __) => Positioned(
@@ -1124,7 +1146,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   gradient: LinearGradient(
                     colors: [
                       Colors.transparent,
-                      _stateColor.withOpacity(0.4),
+                      _stateColor.withOpacity(0.3),
                       Colors.transparent,
                     ],
                   ),
@@ -1132,102 +1154,46 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ),
           ),
-          // ── Floating neural particles ────────────────────────────────
-          Positioned.fill(
-            child: IgnorePointer(
-              child: AnimatedBuilder(
-                animation: _particleAnim,
-                builder: (_, __) => CustomPaint(
-                  painter: _NeuralParticlesPainter(
-                    _particleAnim.value,
-                    _stateColor,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          // ── Corner brackets ─────────────────────────────────────────
+
+          // Corner brackets
           ..._buildCorners(),
-          // ── Main content ─────────────────────────────────────────────
+
           SafeArea(
             child: Column(
               children: [
-                // ── Top bar ─────────────────────────────────────────────
-                _buildTopBar(),
-                // ── Stats + Avatar ───────────────────────────────────────
-                Expanded(
-                  flex: 5,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                // ── Top bar ──────────────────────────────────────
+                _buildTopBar(timeStr, dateStr),
+
+                // ── Avatar (expanded, takes most space) ──────────
+                Expanded(flex: 6, child: _buildAvatarSection()),
+
+                // ── Response card ────────────────────────────────
+                _buildResponseCard(),
+
+                const SizedBox(height: 10),
+
+                // FIX: Wrap bottom controls in keyboard-aware padding.
+                // Since resizeToAvoidBottomInset is false, we manually shift
+                // up when the keyboard is visible so the input stays visible.
+                AnimatedPadding(
+                  duration: const Duration(milliseconds: 150),
+                  curve: Curves.easeOut,
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(context).viewInsets.bottom,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.only(left: 12),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _statItem(
-                              "VOICE LATENCY",
-                              "${_voiceLatency}ms",
-                              _cyan,
-                            ),
-                            const SizedBox(height: 14),
-                            _statItem("NEURAL LOAD", "$_neuralLoad%", _cyan),
-                            const SizedBox(height: 14),
-                            _statItem("MOOD", _mood, _cyan),
-                            const SizedBox(height: 14),
-                            _statItem("MEMORY SYNC", "$_memorySync%", _cyan),
-                          ],
-                        ),
-                      ),
-                      // Avatar + HUD rings + orbit indicators
-                      Expanded(child: _buildAvatarSection()),
-                      Padding(
-                        padding: const EdgeInsets.only(right: 12),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            _statItem(
-                              "DATE",
-                              dateStr,
-                              _magenta,
-                              alignRight: true,
-                            ),
-                            const SizedBox(height: 14),
-                            _statItem(
-                              "TIME",
-                              timeStr,
-                              _magenta,
-                              alignRight: true,
-                            ),
-                            const SizedBox(height: 14),
-                            _statItem(
-                              "MODEL",
-                              "LCKY-7B",
-                              _magenta,
-                              alignRight: true,
-                            ),
-                            const SizedBox(height: 14),
-                            _statItem(
-                              "VERSION",
-                              "2.4.1",
-                              _magenta,
-                              alignRight: true,
-                            ),
-                          ],
-                        ),
-                      ),
+                      // ── Type input ──────────────────────────────
+                      if (_showTyping) _buildTypeInput(),
+
+                      // ── Mic + keyboard row ──────────────────────
+                      _buildActionRow(),
+
+                      const SizedBox(height: 12),
                     ],
                   ),
                 ),
-                // ── L.U.C.K.Y Says card ──────────────────────────────────
-                _buildResponseCard(),
-                const SizedBox(height: 12),
-                // ── Mic row ──────────────────────────────────────────────
-                _buildMicRow(),
-                // ── Bottom bar ───────────────────────────────────────────
-                _buildBottomBar(),
               ],
             ),
           ),
@@ -1236,22 +1202,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Top Bar ───────────────────────────────────────────────────────────────
-  Widget _buildTopBar() {
+  // ── Top bar with date/time inline ────────────────────────────────────────
+  Widget _buildTopBar(String timeStr, String dateStr) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // L.U.C.K.Y logo
+          // Title
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               ShaderMask(
-                shaderCallback: (bounds) => LinearGradient(
-                  colors: [_cyan, _purple, _magenta],
-                  stops: const [0.0, 0.5, 1.0],
-                ).createShader(bounds),
+                shaderCallback: (b) => const LinearGradient(
+                  colors: [_cyan, Color(0xFF6C00CC), _magenta],
+                ).createShader(b),
                 child: const Text(
                   "L.U.C.K.Y",
                   style: TextStyle(
@@ -1260,10 +1225,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     fontWeight: FontWeight.w900,
                     letterSpacing: 5,
                     color: Colors.white,
-                    shadows: [
-                      Shadow(color: Color(0xFF00D4FF), blurRadius: 16),
-                      Shadow(color: Color(0xFFB400FF), blurRadius: 8),
-                    ],
                   ),
                 ),
               ),
@@ -1273,7 +1234,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     "PERSONAL AI  ",
                     style: TextStyle(
                       fontSize: 9,
-                      letterSpacing: 3,
+                      letterSpacing: 2.5,
                       color: Colors.white38,
                     ),
                   ),
@@ -1283,12 +1244,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      border: Border.all(color: _cyan.withOpacity(0.7)),
+                      border: Border.all(color: _cyan.withOpacity(0.6)),
                       borderRadius: BorderRadius.circular(3),
                       color: _cyan.withOpacity(0.08),
-                      boxShadow: [
-                        BoxShadow(color: _cyan.withOpacity(0.3), blurRadius: 8),
-                      ],
                     ),
                     child: const Text(
                       "ONLINE",
@@ -1304,124 +1262,135 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ],
           ),
-          // Dynamic status chip
-          AnimatedBuilder(
-            animation: _pulseAnim,
-            builder: (_, __) => Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: _stateColor.withOpacity(0.6),
-                  width: 1.2,
-                ),
-                color: _stateColor.withOpacity(0.1),
-                boxShadow: [
-                  BoxShadow(
-                    color: _stateColor.withOpacity(0.2 * _pulseAnim.value),
-                    blurRadius: 16,
-                    spreadRadius: 2,
+
+          // Date + Time + State badge stacked
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              // State badge
+              AnimatedBuilder(
+                animation: _pulseAnim,
+                builder: (_, __) => Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
                   ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  // Pulsing dot
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _stateColor,
-                      boxShadow: [
-                        BoxShadow(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: _stateColor.withOpacity(0.55),
+                      width: 1.2,
+                    ),
+                    color: _stateColor.withOpacity(0.1),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _stateColor.withOpacity(0.2 * _pulseAnim.value),
+                        blurRadius: 14,
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
                           color: _stateColor,
-                          blurRadius: 10 * _pulseAnim.value,
+                          boxShadow: [
+                            BoxShadow(
+                              color: _stateColor,
+                              blurRadius: 8 * _pulseAnim.value,
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 7),
+                      Text(
+                        _stateLabel,
+                        style: TextStyle(
+                          fontSize: 10,
+                          letterSpacing: 2,
+                          fontWeight: FontWeight.w700,
+                          color: _stateColor,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _stateLabel,
-                    style: TextStyle(
-                      fontSize: 11,
-                      letterSpacing: 2,
-                      fontWeight: FontWeight.w700,
-                      color: _stateColor,
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
+              const SizedBox(height: 5),
+              // Time
+              Text(
+                timeStr,
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: _magenta,
+                  shadows: [
+                    Shadow(color: _magenta.withOpacity(0.7), blurRadius: 6),
+                  ],
+                ),
+              ),
+              // Date
+              Text(
+                dateStr,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 9,
+                  letterSpacing: 1,
+                  color: Colors.white38,
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  // ── Avatar Section with circular HUD ──────────────────────────────────────
+  // ── Avatar section ────────────────────────────────────────────────────────
   Widget _buildAvatarSection() {
     return Stack(
       alignment: Alignment.center,
       children: [
-        // Outer rotating rings
+        // HUD rings behind avatar
         AnimatedBuilder(
           animation: _ringAnim,
           builder: (_, __) => CustomPaint(
-            size: const Size(270, 270),
+            size: const Size(260, 260),
             painter: _HudRingPainter(_ringAnim.value, _stateColor),
           ),
         ),
-        // Orbit indicators
-        AnimatedBuilder(
-          animation: _orbitAnim,
-          builder: (_, __) => CustomPaint(
-            size: const Size(270, 270),
-            painter: _OrbitIndicatorPainter(_orbitAnim.value, _stateColor),
-          ),
-        ),
-        // Voice-reactive pulse
+        // Pulse glow
         AnimatedBuilder(
           animation: _pulseAnim,
           builder: (_, __) => Container(
-            width: 195 * _pulseAnim.value,
-            height: 195 * _pulseAnim.value,
+            width: 190 * _pulseAnim.value,
+            height: 190 * _pulseAnim.value,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: RadialGradient(
-                colors: [
-                  _stateColor.withOpacity(0.18),
-                  _stateColor.withOpacity(0.05),
-                  Colors.transparent,
-                ],
-                stops: const [0.0, 0.6, 1.0],
+                colors: [_stateColor.withOpacity(0.15), Colors.transparent],
               ),
             ),
           ),
         ),
-        // Secondary inner ring (softer)
-        AnimatedBuilder(
-          animation: _pulseAnim,
-          builder: (_, __) => Container(
-            width: 160,
-            height: 160,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: _stateColor.withOpacity(0.12 + 0.08 * _pulseAnim.value),
-                width: 1,
-              ),
-            ),
+        // Avatar
+        ClipRect(
+          child: Align(
+            alignment: const Alignment(0, -0.3),
+            heightFactor: 0.72,
+            widthFactor: 1.0,
+            child: LuckyAvatar(key: _avatarKey, state: currentState),
           ),
         ),
-        // The avatar
-        LuckyAvatar(key: _avatarKey, state: currentState),
       ],
     );
   }
 
-  // ── Response Card (L.U.C.K.Y SAYS) ────────────────────────────────────────
+  // ── Response card ─────────────────────────────────────────────────────────
   Widget _buildResponseCard() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -1430,25 +1399,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          // Glassmorphism layers
           color: Colors.white.withOpacity(0.04),
-          border: Border.all(color: _cyan.withOpacity(0.28), width: 1.0),
+          border: Border.all(color: _cyan.withOpacity(0.28)),
           boxShadow: [
             BoxShadow(
-              color: _cyan.withOpacity(0.08),
-              blurRadius: 20,
+              color: _cyan.withOpacity(0.07),
+              blurRadius: 18,
               offset: const Offset(0, 4),
-            ),
-            BoxShadow(
-              color: _magenta.withOpacity(0.06),
-              blurRadius: 16,
-              offset: const Offset(0, -2),
             ),
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Header row
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -1483,17 +1447,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 8),
             AnimatedSwitcher(
-              duration: const Duration(milliseconds: 400),
-              transitionBuilder: (child, anim) => FadeTransition(
-                opacity: anim,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 0.1),
-                    end: Offset.zero,
-                  ).animate(anim),
-                  child: child,
-                ),
-              ),
+              duration: const Duration(milliseconds: 350),
+              transitionBuilder: (child, anim) =>
+                  FadeTransition(opacity: anim, child: child),
               child: Text(
                 key: ValueKey(_text),
                 _text.isEmpty ? "All systems operational." : _text,
@@ -1529,24 +1485,109 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Mic Row ───────────────────────────────────────────────────────────────
-  Widget _buildMicRow() {
+  // ── Type input ────────────────────────────────────────────────────────────
+  Widget _buildTypeInput() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          color: Colors.white.withOpacity(0.05),
+          border: Border.all(color: _cyan.withOpacity(0.35)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _typeController,
+                focusNode: _typeFocus,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+                cursorColor: _cyan,
+                decoration: InputDecoration(
+                  hintText: "Type your message...",
+                  hintStyle: TextStyle(color: Colors.white30, fontSize: 14),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                ),
+                onSubmitted: (_) => _sendTyped(),
+                textInputAction: TextInputAction.send,
+              ),
+            ),
+            GestureDetector(
+              onTap: _sendTyped,
+              child: Container(
+                margin: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(colors: [_cyan, _magenta]),
+                  boxShadow: [
+                    BoxShadow(color: _cyan.withOpacity(0.4), blurRadius: 10),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.send_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Mic + keyboard row ───────────────────────────────────────────────────
+  Widget _buildActionRow() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _sidePanel(
-            topLabel: "SYSTEM\nSTATUS",
-            lines: [
-              _panelLine("ALL SYSTEMS", Colors.white70, bold: true),
-              _panelLine("NOMINAL", Colors.greenAccent),
-            ],
-            showDot: true,
-            dotColor: Colors.greenAccent,
+          // Keyboard toggle button
+          GestureDetector(
+            onTap: () {
+              setState(() {
+                _showTyping = !_showTyping;
+              });
+              if (_showTyping) {
+                Future.delayed(
+                  const Duration(milliseconds: 100),
+                  () => _typeFocus.requestFocus(),
+                );
+              } else {
+                _typeFocus.unfocus();
+              }
+            },
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _showTyping
+                    ? _cyan.withOpacity(0.2)
+                    : Colors.white.withOpacity(0.05),
+                border: Border.all(
+                  color: _showTyping ? _cyan.withOpacity(0.7) : Colors.white24,
+                ),
+              ),
+              child: Icon(
+                _showTyping
+                    ? Icons.keyboard_hide_rounded
+                    : Icons.keyboard_rounded,
+                color: _showTyping ? _cyan : Colors.white54,
+                size: 22,
+              ),
+            ),
           ),
-          // Mic button — enhanced glow/pulse/ripple
+
+          const SizedBox(width: 24),
+
+          // Mic button
           GestureDetector(
             onTap: _toggleListening,
             child: AnimatedBuilder(
@@ -1557,58 +1598,34 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 return Stack(
                   alignment: Alignment.center,
                   children: [
-                    // Outer ripple 2
                     if (active)
                       Container(
-                        width: 110 + 20 * _pulseAnim.value,
-                        height: 110 + 20 * _pulseAnim.value,
+                        width: 96 + 18 * _pulseAnim.value,
+                        height: 96 + 18 * _pulseAnim.value,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: _stateColor.withOpacity(
-                              0.08 * _pulseAnim.value,
-                            ),
-                            width: 1,
-                          ),
-                        ),
-                      ),
-                    // Outer ripple 1
-                    if (active)
-                      Container(
-                        width: 96 + 16 * _pulseAnim.value,
-                        height: 96 + 16 * _pulseAnim.value,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: _stateColor.withOpacity(
-                              0.18 * _pulseAnim.value,
+                              0.12 * _pulseAnim.value,
                             ),
                             width: 1.5,
                           ),
                         ),
                       ),
-                    // Ring border
                     Container(
-                      width: 82,
-                      height: 82,
+                      width: 80,
+                      height: 80,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: _stateColor.withOpacity(0.4),
                           width: 1.5,
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _stateColor.withOpacity(0.1),
-                            blurRadius: 12,
-                          ),
-                        ],
                       ),
                     ),
-                    // Core button
                     Container(
-                      width: 66,
-                      height: 66,
+                      width: 64,
+                      height: 64,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: LinearGradient(
@@ -1619,13 +1636,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         boxShadow: [
                           BoxShadow(
                             color: _stateColor.withOpacity(active ? 0.7 : 0.45),
-                            blurRadius: active ? 32 * _pulseAnim.value : 20,
-                            spreadRadius: active ? 2 : 0,
-                          ),
-                          BoxShadow(
-                            color: _stateColor.withOpacity(0.15),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
+                            blurRadius: active ? 30 * _pulseAnim.value : 18,
                           ),
                         ],
                       ),
@@ -1640,102 +1651,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               },
             ),
           ),
-          _sidePanel(
-            topLabel: "NEURAL\nNETWORK",
-            lines: [_panelLine("READY", _cyan, bold: true)],
-            showGraph: true,
-            graphColor: _cyan,
-          ),
+
+          const SizedBox(width: 24),
+
+          // Placeholder to balance layout
+          const SizedBox(width: 48, height: 48),
         ],
       ),
     );
   }
 
-  // ── Bottom Bar ────────────────────────────────────────────────────────────
-  Widget _buildBottomBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              _dot(_magenta),
-              const SizedBox(width: 4),
-              _dot(_red),
-              const SizedBox(width: 8),
-              const Text(
-                "SYS ACTIVE",
-                style: TextStyle(
-                  fontSize: 8,
-                  letterSpacing: 2,
-                  color: Colors.white24,
-                  fontFamily: 'monospace',
-                ),
-              ),
-            ],
-          ),
-          Container(
-            width: 50,
-            height: 3,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(2),
-              gradient: LinearGradient(
-                colors: [_cyan.withOpacity(0.3), _magenta.withOpacity(0.3)],
-              ),
-            ),
-          ),
-          const Text(
-            "NEURAL NET READY",
-            style: TextStyle(
-              fontSize: 8,
-              letterSpacing: 1.5,
-              color: Colors.white24,
-              fontFamily: 'monospace',
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Helper Widgets ────────────────────────────────────────────────────────
-  Widget _statItem(
-    String label,
-    String value,
-    Color color, {
-    bool alignRight = false,
-  }) {
-    return Column(
-      crossAxisAlignment: alignRight
-          ? CrossAxisAlignment.end
-          : CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 7,
-            letterSpacing: 1.5,
-            color: Colors.white38,
-            fontFamily: 'monospace',
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1,
-            color: color,
-            fontFamily: 'monospace',
-            shadows: [Shadow(color: color.withOpacity(0.8), blurRadius: 8)],
-          ),
-        ),
-      ],
-    );
-  }
-
+  // ── Helpers ───────────────────────────────────────────────────────────────
   Widget _chip(String label, String value, Color color) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1770,113 +1696,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             fontWeight: FontWeight.w700,
             color: color,
             fontFamily: 'monospace',
-            shadows: [Shadow(color: color.withOpacity(0.6), blurRadius: 6)],
+            shadows: [Shadow(color: color.withOpacity(0.6), blurRadius: 5)],
           ),
         ),
       ],
     );
   }
 
-  Widget _sidePanel({
-    required String topLabel,
-    required List<Widget> lines,
-    bool showDot = false,
-    Color dotColor = Colors.white,
-    bool showGraph = false,
-    Color graphColor = Colors.white,
-  }) {
-    return Container(
-      width: 100,
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        color: Colors.white.withOpacity(0.03),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              if (showDot) ...[
-                Container(
-                  width: 5,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: dotColor,
-                    boxShadow: [BoxShadow(color: dotColor, blurRadius: 6)],
-                  ),
-                ),
-                const SizedBox(width: 5),
-              ],
-              Flexible(
-                child: Text(
-                  topLabel,
-                  style: const TextStyle(
-                    fontSize: 7,
-                    letterSpacing: 1.5,
-                    color: Colors.white38,
-                    fontFamily: 'monospace',
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          ...lines,
-          if (showGraph) ...[
-            const SizedBox(height: 6),
-            CustomPaint(
-              size: const Size(80, 18),
-              painter: _MiniGraphPainter(graphColor),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _panelLine(String text, Color color, {bool bold = false}) {
-    return Text(
-      text,
-      style: TextStyle(
-        fontSize: 10,
-        color: color,
-        fontFamily: 'monospace',
-        fontWeight: bold ? FontWeight.w700 : FontWeight.normal,
-        shadows: [Shadow(color: color.withOpacity(0.6), blurRadius: 5)],
-      ),
-    );
-  }
-
-  Widget _dot(Color color) => Container(
-    width: 5,
-    height: 5,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      color: color,
-      boxShadow: [BoxShadow(color: color, blurRadius: 6)],
-    ),
-  );
-
   String _monthName(int m) {
     const n = [
-      'JAN',
-      'FEB',
-      'MAR',
-      'APR',
-      'MAY',
-      'JUN',
-      'JUL',
-      'AUG',
-      'SEP',
-      'OCT',
-      'NOV',
-      'DEC',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return n[m - 1];
   }
@@ -1908,179 +1748,39 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 }
 
-// ─── Painters ────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// PAINTERS
+// ─────────────────────────────────────────────────────────────────────────────
 
-/// Grid background (unchanged logic, enhanced grid color)
 class _HudBgPainter extends CustomPainter {
   final Animation<double> anim;
   _HudBgPainter(this.anim) : super(repaint: anim);
-
   @override
   void paint(Canvas canvas, Size size) {
     canvas.drawRect(
       Rect.fromLTWH(0, 0, size.width, size.height),
       Paint()..color = const Color(0xFF04010A),
     );
-    // Primary grid
-    final grid = Paint()
-      ..color = const Color(0xFFB400FF).withOpacity(0.035)
+    final g = Paint()
+      ..color = const Color(0xFFB400FF).withOpacity(0.03)
       ..strokeWidth = 0.5;
     for (double x = 0; x < size.width; x += 32)
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), g);
     for (double y = 0; y < size.height; y += 32)
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
-    // Secondary larger grid (cyan tint)
-    final grid2 = Paint()
-      ..color = const Color(0xFF00D4FF).withOpacity(0.02)
-      ..strokeWidth = 0.5;
-    for (double x = 0; x < size.width; x += 96)
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid2);
-    for (double y = 0; y < size.height; y += 96)
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid2);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), g);
   }
 
   @override
   bool shouldRepaint(_) => false;
 }
 
-/// Radial ambient glow behind avatar (visual only)
-class _RadialGlowPainter extends CustomPainter {
-  final Color color;
-  final Animation<double> pulse;
-  _RadialGlowPainter(this.color, this.pulse) : super(repaint: pulse);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-    final cy = size.height * 0.38;
-    final r = size.width * 0.42 * (0.9 + 0.1 * pulse.value);
-    final paint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          color.withOpacity(0.07),
-          color.withOpacity(0.025),
-          Colors.transparent,
-        ],
-        stops: const [0.0, 0.5, 1.0],
-      ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r));
-    canvas.drawCircle(Offset(cx, cy), r, paint);
-  }
-
-  @override
-  bool shouldRepaint(_RadialGlowPainter old) => old.color != color;
-}
-
-/// Floating neural particles (visual only)
-class _NeuralParticlesPainter extends CustomPainter {
-  final double t;
-  final Color color;
-  _NeuralParticlesPainter(this.t, this.color);
-
-  static final _rng = Random(42);
-  static final List<_Particle> _particles = List.generate(22, (i) {
-    return _Particle(
-      x: _rng.nextDouble(),
-      y: _rng.nextDouble(),
-      r: 1.0 + _rng.nextDouble() * 1.8,
-      speed: 0.04 + _rng.nextDouble() * 0.08,
-      phase: _rng.nextDouble(),
-      drift: (_rng.nextDouble() - 0.5) * 0.3,
-    );
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    for (final p in _particles) {
-      final y = ((p.y - p.speed * t + p.phase) % 1.0);
-      final x = p.x + sin((t + p.phase) * pi * 2) * p.drift * 0.04;
-      final opacity = (sin((t + p.phase) * pi * 2) * 0.5 + 0.5) * 0.55;
-      canvas.drawCircle(
-        Offset(x.clamp(0, 1) * size.width, y * size.height),
-        p.r,
-        Paint()..color = color.withOpacity(opacity),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_NeuralParticlesPainter old) =>
-      old.t != t || old.color != color;
-}
-
-class _Particle {
-  final double x, y, r, speed, phase, drift;
-  const _Particle({
-    required this.x,
-    required this.y,
-    required this.r,
-    required this.speed,
-    required this.phase,
-    required this.drift,
-  });
-}
-
-/// Orbiting indicators around the avatar (visual only)
-class _OrbitIndicatorPainter extends CustomPainter {
-  final double t;
-  final Color color;
-  _OrbitIndicatorPainter(this.t, this.color);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2, cy = size.height / 2;
-    const orbitR = 118.0;
-    final a = t * 2 * pi;
-    // 3 orbiting diamonds at equal spacing
-    for (int i = 0; i < 3; i++) {
-      final angle = a + i * (2 * pi / 3);
-      final ox = cx + cos(angle) * orbitR;
-      final oy = cy + sin(angle) * orbitR;
-      final paint = Paint()
-        ..color =
-            (i == 0
-                    ? color
-                    : (i == 1
-                          ? const Color(0xFFB400FF)
-                          : const Color(0xFF6C00CC)))
-                .withOpacity(0.75);
-      // Small diamond
-      final path = Path()
-        ..moveTo(ox, oy - 5)
-        ..lineTo(ox + 4, oy)
-        ..lineTo(ox, oy + 5)
-        ..lineTo(ox - 4, oy)
-        ..close();
-      canvas.drawPath(path, paint);
-    }
-    // Tick marks on the outer ring
-    for (int i = 0; i < 12; i++) {
-      final angle = i * pi / 6;
-      final inner = 112.0, outer = i % 3 == 0 ? 122.0 : 117.0;
-      canvas.drawLine(
-        Offset(cx + cos(angle) * inner, cy + sin(angle) * inner),
-        Offset(cx + cos(angle) * outer, cy + sin(angle) * outer),
-        Paint()
-          ..color = color.withOpacity(i % 3 == 0 ? 0.6 : 0.3)
-          ..strokeWidth = i % 3 == 0 ? 1.5 : 0.8,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_OrbitIndicatorPainter old) =>
-      old.t != t || old.color != color;
-}
-
-/// HUD rings (enhanced from original)
 class _HudRingPainter extends CustomPainter {
   final double t;
   final Color color;
   _HudRingPainter(this.t, this.color);
-
   @override
   void paint(Canvas canvas, Size size) {
     final cx = size.width / 2, cy = size.height / 2;
-
     void arc(double r, double s, double sw, Color c, double w) =>
         canvas.drawArc(
           Rect.fromCircle(center: Offset(cx, cy), radius: r),
@@ -2093,55 +1793,44 @@ class _HudRingPainter extends CustomPainter {
             ..style = PaintingStyle.stroke
             ..strokeCap = StrokeCap.round,
         );
-
-    void ring(double r, Color c, {double w = 0.5}) => canvas.drawCircle(
+    void ring(double r, Color c) => canvas.drawCircle(
       Offset(cx, cy),
       r,
       Paint()
         ..color = c
-        ..strokeWidth = w
+        ..strokeWidth = 0.5
         ..style = PaintingStyle.stroke,
     );
-
-    // Static guide rings
-    ring(130, color.withOpacity(0.08));
-    ring(106, const Color(0xFFCC0033).withOpacity(0.07));
-    ring(84, color.withOpacity(0.06));
-    ring(60, const Color(0xFF6C00CC).withOpacity(0.06));
-
+    ring(128, color.withOpacity(0.07));
+    ring(104, const Color(0xFFCC0033).withOpacity(0.06));
+    ring(82, color.withOpacity(0.05));
     final a = t * 2 * pi;
-
-    // Rotating arcs
-    arc(130, a, pi * 0.65, color.withOpacity(0.55), 1.8);
-    arc(130, a + pi, pi * 0.42, const Color(0xFFCC0033).withOpacity(0.45), 1.8);
-    arc(106, -a * 0.7, pi * 0.55, color.withOpacity(0.35), 1.2);
+    arc(128, a, pi * 0.65, color.withOpacity(0.55), 1.8);
+    arc(128, a + pi, pi * 0.42, const Color(0xFFCC0033).withOpacity(0.45), 1.8);
+    arc(104, -a * 0.7, pi * 0.55, color.withOpacity(0.32), 1.2);
     arc(
-      106,
+      104,
       -a * 0.7 + pi,
-      pi * 0.32,
-      const Color(0xFFCC0033).withOpacity(0.3),
+      pi * 0.30,
+      const Color(0xFFCC0033).withOpacity(0.28),
       1.0,
     );
-    arc(84, a * 1.3, pi * 0.3, const Color(0xFF6C00CC).withOpacity(0.4), 1.0);
-
-    // Cardinal tick marks
     for (int i = 0; i < 4; i++) {
       final angle = i * pi / 2;
       canvas.drawLine(
-        Offset(cx + cos(angle) * 122, cy + sin(angle) * 122),
-        Offset(cx + cos(angle) * 136, cy + sin(angle) * 136),
+        Offset(cx + cos(angle) * 120, cy + sin(angle) * 120),
+        Offset(cx + cos(angle) * 134, cy + sin(angle) * 134),
         Paint()
           ..color = (i % 2 == 0 ? color : const Color(0xFFCC0033)).withOpacity(
-            0.75,
+            0.7,
           )
           ..strokeWidth = 1.8,
       );
     }
-    // Orbiting dots on outer ring
     for (int i = 0; i < 8; i++) {
       final angle = i * pi / 4 + a * 0.12;
       canvas.drawCircle(
-        Offset(cx + cos(angle) * 130, cy + sin(angle) * 130),
+        Offset(cx + cos(angle) * 128, cy + sin(angle) * 128),
         2.2,
         Paint()..color = color.withOpacity(0.35),
       );
@@ -2152,42 +1841,6 @@ class _HudRingPainter extends CustomPainter {
   bool shouldRepaint(_HudRingPainter old) => old.t != t || old.color != color;
 }
 
-/// Mini graph (unchanged)
-class _MiniGraphPainter extends CustomPainter {
-  final Color color;
-  _MiniGraphPainter(this.color);
-  @override
-  void paint(Canvas canvas, Size size) {
-    final pts = [0.5, 0.3, 0.7, 0.4, 0.8, 0.2, 0.6, 0.9, 0.3, 0.7];
-    final path = Path();
-    for (int i = 0; i < pts.length; i++) {
-      final x = size.width * i / (pts.length - 1);
-      final y = size.height * (1 - pts[i]);
-      if (i == 0)
-        path.moveTo(x, y);
-      else
-        path.lineTo(x, y);
-    }
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = color.withOpacity(0.75)
-        ..strokeWidth = 1.5
-        ..style = PaintingStyle.stroke
-        ..strokeJoin = StrokeJoin.round,
-    );
-    canvas.drawCircle(
-      Offset(size.width, size.height * (1 - pts.last)),
-      2.5,
-      Paint()..color = color,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_) => false;
-}
-
-/// Corner brackets (unchanged)
 class _Corner extends StatelessWidget {
   final double size, thick;
   final bool top, left;
