@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'ui/home_screen.dart';
-// import 'ui/avatar_screen.dart';
+import 'ui/avatar_screen.dart';
 void main() {
   runApp(const MyApp());
 }

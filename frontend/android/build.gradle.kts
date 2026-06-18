@@ -36,8 +36,13 @@ subprojects {
 
         resolutionStrategy {
 
-            force("androidx.core:core-ktx:1.12.0")
-            force("androidx.core:core:1.12.0")
+            // FIXED: was 1.12.0, which is missing
+            // EditorInfoCompat.setStylusHandwritingEnabled(...),
+            // causing a NoSuchMethodError crash the moment the
+            // soft keyboard tries to show (TextInputPlugin.createInputConnection).
+            // That method was added in androidx.core 1.13.0.
+            force("androidx.core:core-ktx:1.13.1")
+            force("androidx.core:core:1.13.1")
             force("androidx.browser:browser:1.8.0")
         }
     }

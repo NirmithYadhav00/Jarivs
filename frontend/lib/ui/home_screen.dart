@@ -17,7 +17,7 @@ import '../models/lucky_state.dart';
 import '../widgets/lucky_avatar.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Isolated waveform — only animates when listening/talking
+// Waveform widget — only animates when listening/talking
 // ─────────────────────────────────────────────────────────────────────────────
 class _WaveformWidget extends StatefulWidget {
   final LuckyState state;
@@ -88,7 +88,7 @@ class _WaveformWidgetState extends State<_WaveformWidget> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 38,
+      height: 32,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: List.generate(
@@ -98,7 +98,7 @@ class _WaveformWidgetState extends State<_WaveformWidget> {
               padding: const EdgeInsets.symmetric(horizontal: 1),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 60),
-                height: (_h[i] * 34).clamp(3.0, 34.0),
+                height: (_h[i] * 28).clamp(2.0, 28.0),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(2),
                   gradient: LinearGradient(
@@ -111,6 +111,50 @@ class _WaveformWidgetState extends State<_WaveformWidget> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Holographic icon — matches the glowing circle icons in the reference image
+// ─────────────────────────────────────────────────────────────────────────────
+class _HoloIcon extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final double size;
+  final bool active;
+  const _HoloIcon({
+    required this.icon,
+    required this.color,
+    this.size = 54,
+    this.active = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color.withOpacity(active ? 0.18 : 0.08),
+        border: Border.all(
+          color: color.withOpacity(active ? 0.85 : 0.50),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(active ? 0.42 : 0.16),
+            blurRadius: active ? 20 : 10,
+            spreadRadius: active ? 2 : 0,
+          ),
+        ],
+      ),
+      child: Icon(
+        icon,
+        color: color.withOpacity(active ? 1.0 : 0.85),
+        size: size * 0.40,
       ),
     );
   }
@@ -147,9 +191,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late AnimationController _ringController;
   late AnimationController _pulseController;
   late AnimationController _scanController;
+  late AnimationController _floatController;
   late Animation<double> _ringAnim;
   late Animation<double> _pulseAnim;
   late Animation<double> _scanAnim;
+  late Animation<double> _floatAnim;
 
   String _responseTime = "0.00s";
 
@@ -184,11 +230,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       vsync: this,
       duration: const Duration(seconds: 4),
     )..repeat();
+    _floatController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat(reverse: true);
     _ringAnim = Tween<double>(begin: 0, end: 1).animate(_ringController);
     _pulseAnim = Tween<double>(begin: 0.7, end: 1.0).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
     _scanAnim = Tween<double>(begin: 0, end: 1).animate(_scanController);
+    _floatAnim = Tween<double>(begin: -5.0, end: 5.0).animate(
+      CurvedAnimation(parent: _floatController, curve: Curves.easeInOut),
+    );
 
     if (!_initialized) {
       _initialized = true;
@@ -203,28 +256,31 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _ringController.dispose();
     _pulseController.dispose();
     _scanController.dispose();
+    _floatController.dispose();
     _typeController.dispose();
     _typeFocus.dispose();
     super.dispose();
   }
 
-  // ── Colors ────────────────────────────────────────────────────────────────
+  // ── Color palette — inspired by reference image (blue/cyan holographic) ──
   static const _cyan = Color(0xFF00D4FF);
-  static const _magenta = Color(0xFFB400FF);
-  static const _red = Color(0xFFCC0044);
-  static const _amber = Color(0xFFFFB800);
-  static const _bg = Color(0xFF04010A);
+  static const _cyanLight = Color(0xFF60E8FF);
+  static const _blue = Color(0xFF0A84FF);
+  static const _white = Color(0xFFDEF0FF);
+  static const _bg = Color(0xFF03060F);
+  static const _bgCard = Color(0xFF060E1C);
+  static const _bgPanel = Color(0xFF071018);
 
   Color get _stateColor {
     switch (currentState) {
       case LuckyState.listening:
         return _cyan;
       case LuckyState.thinking:
-        return _amber;
+        return const Color(0xFF4DA8FF);
       case LuckyState.talking:
-        return _magenta;
+        return _cyanLight;
       default:
-        return _red;
+        return _blue;
     }
   }
 
@@ -325,7 +381,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  // ── Type & send ───────────────────────────────────────────────────────────
   Future<void> _sendTyped() async {
     final input = _typeController.text.trim();
     if (input.isEmpty) return;
@@ -1121,32 +1176,28 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final timeStr = "$h12:$minute $ampm";
     final dateStr = "${_monthName(now.month)} ${now.day}, ${now.year}";
 
-    // FIX: resizeToAvoidBottomInset: false prevents WebView from crashing
-    // when the keyboard opens. Instead we manually pad the bottom action row.
     return Scaffold(
       backgroundColor: _bg,
-      resizeToAvoidBottomInset: false, // ← FIXED (was true)
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          // Background grid
-          Positioned.fill(
-            child: CustomPaint(painter: _HudBgPainter(_ringAnim)),
-          ),
+          // Background — deep space with city-light glow
+          Positioned.fill(child: CustomPaint(painter: _SpaceBgPainter())),
 
-          // Scan line
+          // Subtle scan line
           AnimatedBuilder(
             animation: _scanAnim,
             builder: (_, __) => Positioned(
               top: MediaQuery.of(context).size.height * _scanAnim.value,
               left: 0,
               right: 0,
-              height: 2,
+              height: 1,
               child: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
                       Colors.transparent,
-                      _stateColor.withOpacity(0.3),
+                      _stateColor.withOpacity(0.12),
                       Colors.transparent,
                     ],
                   ),
@@ -1155,26 +1206,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ),
 
-          // Corner brackets
-          ..._buildCorners(),
-
           SafeArea(
             child: Column(
               children: [
-                // ── Top bar ──────────────────────────────────────
                 _buildTopBar(timeStr, dateStr),
-
-                // ── Avatar (expanded, takes most space) ──────────
                 Expanded(flex: 6, child: _buildAvatarSection()),
-
-                // ── Response card ────────────────────────────────
                 _buildResponseCard(),
-
-                const SizedBox(height: 10),
-
-                // FIX: Wrap bottom controls in keyboard-aware padding.
-                // Since resizeToAvoidBottomInset is false, we manually shift
-                // up when the keyboard is visible so the input stays visible.
+                const SizedBox(height: 8),
                 AnimatedPadding(
                   duration: const Duration(milliseconds: 150),
                   curve: Curves.easeOut,
@@ -1184,13 +1222,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // ── Type input ──────────────────────────────
                       if (_showTyping) _buildTypeInput(),
-
-                      // ── Mic + keyboard row ──────────────────────
                       _buildActionRow(),
-
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 16),
                     ],
                   ),
                 ),
@@ -1202,40 +1236,59 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Top bar with date/time inline ────────────────────────────────────────
+  // ── Top bar ───────────────────────────────────────────────────────────────
   Widget _buildTopBar(String timeStr, String dateStr) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 6),
+      padding: const EdgeInsets.fromLTRB(18, 10, 18, 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Title
+          // Left: Logo + subtitle
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ShaderMask(
-                shaderCallback: (b) => const LinearGradient(
-                  colors: [_cyan, Color(0xFF6C00CC), _magenta],
-                ).createShader(b),
-                child: const Text(
-                  "L.U.C.K.Y",
-                  style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 5,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
               Row(
                 children: [
-                  const Text(
+                  // Glowing indicator dot
+                  Container(
+                    width: 7,
+                    height: 7,
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _cyan,
+                      boxShadow: [
+                        BoxShadow(color: _cyan.withOpacity(0.9), blurRadius: 8),
+                      ],
+                    ),
+                  ),
+                  ShaderMask(
+                    shaderCallback: (b) => const LinearGradient(
+                      colors: [_cyanLight, _cyan, _blue],
+                    ).createShader(b),
+                    child: const Text(
+                      "L.U.C.K.Y",
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 4,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 3),
+              Row(
+                children: [
+                  Text(
                     "PERSONAL AI  ",
                     style: TextStyle(
-                      fontSize: 9,
+                      fontSize: 8,
                       letterSpacing: 2.5,
-                      color: Colors.white38,
+                      color: _cyan.withOpacity(0.45),
+                      fontFamily: 'monospace',
                     ),
                   ),
                   Container(
@@ -1244,14 +1297,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      border: Border.all(color: _cyan.withOpacity(0.6)),
+                      border: Border.all(color: _cyan.withOpacity(0.5)),
                       borderRadius: BorderRadius.circular(3),
                       color: _cyan.withOpacity(0.08),
                     ),
-                    child: const Text(
+                    child: Text(
                       "ONLINE",
                       style: TextStyle(
-                        fontSize: 8,
+                        fontSize: 7,
                         letterSpacing: 1.5,
                         color: _cyan,
                         fontFamily: 'monospace',
@@ -1263,56 +1316,57 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ],
           ),
 
-          // Date + Time + State badge stacked
+          // Right: State badge + time
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              // State badge
               AnimatedBuilder(
                 animation: _pulseAnim,
                 builder: (_, __) => Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
+                    horizontal: 10,
+                    vertical: 5,
                   ),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(20),
+                    color: _bgPanel,
                     border: Border.all(
-                      color: _stateColor.withOpacity(0.55),
-                      width: 1.2,
+                      color: _stateColor.withOpacity(0.5),
+                      width: 1,
                     ),
-                    color: _stateColor.withOpacity(0.1),
                     boxShadow: [
                       BoxShadow(
-                        color: _stateColor.withOpacity(0.2 * _pulseAnim.value),
+                        color: _stateColor.withOpacity(0.12 * _pulseAnim.value),
                         blurRadius: 14,
                       ),
                     ],
                   ),
                   child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
-                        width: 6,
-                        height: 6,
+                        width: 5,
+                        height: 5,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: _stateColor,
                           boxShadow: [
                             BoxShadow(
                               color: _stateColor,
-                              blurRadius: 8 * _pulseAnim.value,
+                              blurRadius: 6 * _pulseAnim.value,
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 7),
+                      const SizedBox(width: 6),
                       Text(
                         _stateLabel,
                         style: TextStyle(
-                          fontSize: 10,
-                          letterSpacing: 2,
+                          fontSize: 9,
+                          letterSpacing: 1.8,
                           fontWeight: FontWeight.w700,
                           color: _stateColor,
+                          fontFamily: 'monospace',
                         ),
                       ),
                     ],
@@ -1320,27 +1374,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
               ),
               const SizedBox(height: 5),
-              // Time
               Text(
                 timeStr,
-                style: TextStyle(
+                style: const TextStyle(
                   fontFamily: 'monospace',
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
-                  color: _magenta,
-                  shadows: [
-                    Shadow(color: _magenta.withOpacity(0.7), blurRadius: 6),
-                  ],
+                  color: _white,
                 ),
               ),
-              // Date
               Text(
                 dateStr,
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'monospace',
-                  fontSize: 9,
-                  letterSpacing: 1,
-                  color: Colors.white38,
+                  fontSize: 8,
+                  letterSpacing: 0.8,
+                  color: _cyan.withOpacity(0.35),
                 ),
               ),
             ],
@@ -1350,34 +1399,36 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Avatar section ────────────────────────────────────────────────────────
+  // ── Avatar section with holographic floating icons ────────────────────────
   Widget _buildAvatarSection() {
     return Stack(
       alignment: Alignment.center,
       children: [
-        // HUD rings behind avatar
+        // Rotating holographic rings
         AnimatedBuilder(
           animation: _ringAnim,
           builder: (_, __) => CustomPaint(
-            size: const Size(260, 260),
-            painter: _HudRingPainter(_ringAnim.value, _stateColor),
+            size: const Size(280, 280),
+            painter: _HoloRingPainter(_ringAnim.value, _stateColor),
           ),
         ),
-        // Pulse glow
+
+        // Radial pulse glow
         AnimatedBuilder(
           animation: _pulseAnim,
           builder: (_, __) => Container(
-            width: 190 * _pulseAnim.value,
-            height: 190 * _pulseAnim.value,
+            width: 195 * _pulseAnim.value,
+            height: 195 * _pulseAnim.value,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: RadialGradient(
-                colors: [_stateColor.withOpacity(0.15), Colors.transparent],
+                colors: [_cyan.withOpacity(0.07), Colors.transparent],
               ),
             ),
           ),
         ),
-        // Avatar
+
+        // Avatar — UNCHANGED
         ClipRect(
           child: Align(
             alignment: const Alignment(0, -0.3),
@@ -1398,13 +1449,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         width: double.infinity,
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: Colors.white.withOpacity(0.04),
-          border: Border.all(color: _cyan.withOpacity(0.28)),
+          borderRadius: BorderRadius.circular(20),
+          color: _bgCard,
+          border: Border.all(color: _cyan.withOpacity(0.20), width: 1),
           boxShadow: [
             BoxShadow(
-              color: _cyan.withOpacity(0.07),
-              blurRadius: 18,
+              color: _cyan.withOpacity(0.05),
+              blurRadius: 20,
               offset: const Offset(0, 4),
             ),
           ],
@@ -1419,13 +1470,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 Row(
                   children: [
                     Container(
-                      width: 6,
-                      height: 6,
+                      width: 5,
+                      height: 5,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: _stateColor,
                         boxShadow: [
-                          BoxShadow(color: _stateColor, blurRadius: 6),
+                          BoxShadow(color: _stateColor, blurRadius: 5),
                         ],
                       ),
                     ),
@@ -1435,29 +1486,57 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       style: TextStyle(
                         fontSize: 9,
                         letterSpacing: 2.5,
-                        color: _cyan.withOpacity(0.9),
+                        color: _cyan.withOpacity(0.75),
                         fontFamily: 'monospace',
                         fontWeight: FontWeight.w700,
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(4),
+                        color: _stateColor.withOpacity(0.10),
+                        border: Border.all(
+                          color: _stateColor.withOpacity(0.38),
+                        ),
+                      ),
+                      child: Text(
+                        _stateLabel,
+                        style: TextStyle(
+                          fontSize: 7,
+                          letterSpacing: 1.2,
+                          color: _stateColor,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ),
                   ],
                 ),
-                const Icon(Icons.more_horiz, color: Colors.white24, size: 18),
+                Icon(
+                  Icons.more_horiz,
+                  color: _cyan.withOpacity(0.25),
+                  size: 16,
+                ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
+            // Response text with fade transition
             AnimatedSwitcher(
-              duration: const Duration(milliseconds: 350),
+              duration: const Duration(milliseconds: 300),
               transitionBuilder: (child, anim) =>
                   FadeTransition(opacity: anim, child: child),
               child: Text(
                 key: ValueKey(_text),
                 _text.isEmpty ? "All systems operational." : _text,
                 style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                  height: 1.4,
+                  color: _white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w400,
+                  height: 1.5,
                 ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
@@ -1467,16 +1546,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             _WaveformWidget(
               state: currentState,
               color1: _cyan,
-              color2: _magenta,
+              color2: _cyanLight,
             ),
             const SizedBox(height: 10),
+            // Stats row
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _chip("SPEECH INPUT", _speechInputLabel, _cyan),
-                _chip("NOISE FILTER", "ON", _cyan),
-                _chip("EMOTION SYNC", "STABLE", _cyan),
-                _chip("RESPONSE TIME", _responseTime, _cyan),
+                _statChip("SPEECH INPUT", _speechInputLabel),
+                _statChip("NOISE FILTER", "ON"),
+                _statChip("EMOTION SYNC", "STABLE"),
+                _statChip("RESPONSE", _responseTime),
               ],
             ),
           ],
@@ -1491,9 +1571,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
       child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          color: Colors.white.withOpacity(0.05),
-          border: Border.all(color: _cyan.withOpacity(0.35)),
+          borderRadius: BorderRadius.circular(16),
+          color: _bgCard,
+          border: Border.all(color: _cyan.withOpacity(0.32), width: 1),
+          boxShadow: [
+            BoxShadow(color: _cyan.withOpacity(0.07), blurRadius: 12),
+          ],
         ),
         child: Row(
           children: [
@@ -1501,11 +1584,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               child: TextField(
                 controller: _typeController,
                 focusNode: _typeFocus,
-                style: const TextStyle(color: Colors.white, fontSize: 14),
+                style: const TextStyle(color: _white, fontSize: 14),
                 cursorColor: _cyan,
                 decoration: InputDecoration(
                   hintText: "Type your message...",
-                  hintStyle: TextStyle(color: Colors.white30, fontSize: 14),
+                  hintStyle: TextStyle(
+                    color: _cyan.withOpacity(0.28),
+                    fontSize: 14,
+                  ),
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -1523,9 +1609,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: LinearGradient(colors: [_cyan, _magenta]),
+                  gradient: const LinearGradient(colors: [_cyan, _blue]),
                   boxShadow: [
-                    BoxShadow(color: _cyan.withOpacity(0.4), blurRadius: 10),
+                    BoxShadow(color: _cyan.withOpacity(0.38), blurRadius: 10),
                   ],
                 ),
                 child: const Icon(
@@ -1541,14 +1627,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Mic + keyboard row ───────────────────────────────────────────────────
+  // ── Action row: keyboard toggle + mic button ──────────────────────────────
   Widget _buildActionRow() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Keyboard toggle button
+          // Keyboard toggle — holographic icon style
           GestureDetector(
             onTap: () {
               setState(() {
@@ -1563,31 +1649,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 _typeFocus.unfocus();
               }
             },
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _showTyping
-                    ? _cyan.withOpacity(0.2)
-                    : Colors.white.withOpacity(0.05),
-                border: Border.all(
-                  color: _showTyping ? _cyan.withOpacity(0.7) : Colors.white24,
-                ),
-              ),
-              child: Icon(
-                _showTyping
-                    ? Icons.keyboard_hide_rounded
-                    : Icons.keyboard_rounded,
-                color: _showTyping ? _cyan : Colors.white54,
-                size: 22,
-              ),
+            child: _HoloIcon(
+              icon: _showTyping
+                  ? Icons.keyboard_hide_rounded
+                  : Icons.keyboard_rounded,
+              color: _showTyping ? _cyan : _blue,
+              size: 52,
+              active: _showTyping,
             ),
           ),
 
-          const SizedBox(width: 24),
+          const SizedBox(width: 28),
 
-          // Mic button
+          // Mic button — centre-stage, glowing rings
           GestureDetector(
             onTap: _toggleListening,
             child: AnimatedBuilder(
@@ -1598,51 +1672,58 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 return Stack(
                   alignment: Alignment.center,
                   children: [
+                    // Outer pulse ring
                     if (active)
                       Container(
-                        width: 96 + 18 * _pulseAnim.value,
-                        height: 96 + 18 * _pulseAnim.value,
+                        width: 98 + 16 * _pulseAnim.value,
+                        height: 98 + 16 * _pulseAnim.value,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: _stateColor.withOpacity(
-                              0.12 * _pulseAnim.value,
-                            ),
+                            color: _cyan.withOpacity(0.14 * _pulseAnim.value),
                             width: 1.5,
                           ),
                         ),
                       ),
+                    // Mid ring
                     Container(
-                      width: 80,
-                      height: 80,
+                      width: 82,
+                      height: 82,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
+                        color: active
+                            ? _cyan.withOpacity(0.06)
+                            : Colors.transparent,
                         border: Border.all(
-                          color: _stateColor.withOpacity(0.4),
-                          width: 1.5,
+                          color: _stateColor.withOpacity(0.30),
+                          width: 1,
                         ),
                       ),
                     ),
+                    // Core button
                     Container(
                       width: 64,
                       height: 64,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: active ? [_cyan, _magenta] : [_magenta, _red],
+                        color: _bgPanel,
+                        border: Border.all(
+                          color: _stateColor.withOpacity(0.65),
+                          width: 1.5,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: _stateColor.withOpacity(active ? 0.7 : 0.45),
-                            blurRadius: active ? 30 * _pulseAnim.value : 18,
+                            color: _stateColor.withOpacity(
+                              active ? 0.50 : 0.28,
+                            ),
+                            blurRadius: active ? 26 * _pulseAnim.value : 14,
+                            spreadRadius: active ? 2 : 0,
                           ),
                         ],
                       ),
                       child: Icon(
                         active ? Icons.mic_rounded : Icons.mic_none_rounded,
-                        color: Colors.white,
+                        color: _stateColor,
                         size: 28,
                       ),
                     ),
@@ -1652,41 +1733,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ),
 
-          const SizedBox(width: 24),
-
-          // Placeholder to balance layout
-          const SizedBox(width: 48, height: 48),
+          const SizedBox(width: 28),
+          // Spacer for symmetry
+          const SizedBox(width: 52, height: 52),
         ],
       ),
     );
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
-  Widget _chip(String label, String value, Color color) {
+  Widget _statChip(String label, String value) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Container(
-              width: 4,
-              height: 4,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: color.withOpacity(0.8),
-              ),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 6,
-                letterSpacing: 1,
-                color: Colors.white38,
-                fontFamily: 'monospace',
-              ),
-            ),
-          ],
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 6,
+            letterSpacing: 1,
+            color: _cyan.withOpacity(0.4),
+            fontFamily: 'monospace',
+          ),
         ),
         const SizedBox(height: 2),
         Text(
@@ -1694,9 +1761,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           style: TextStyle(
             fontSize: 9,
             fontWeight: FontWeight.w700,
-            color: color,
+            color: _cyan,
             fontFamily: 'monospace',
-            shadows: [Shadow(color: color.withOpacity(0.6), blurRadius: 5)],
+            shadows: [Shadow(color: _cyan.withOpacity(0.5), blurRadius: 4)],
           ),
         ),
       ],
@@ -1720,72 +1787,80 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     ];
     return n[m - 1];
   }
-
-  List<Widget> _buildCorners() {
-    const size = 22.0, thick = 1.5, pad = 14.0, top = 42.0;
-    return [
-      Positioned(
-        top: top,
-        left: pad,
-        child: _Corner(size, thick, true, true, _magenta),
-      ),
-      Positioned(
-        top: top,
-        right: pad,
-        child: _Corner(size, thick, true, false, _magenta),
-      ),
-      Positioned(
-        bottom: pad,
-        left: pad,
-        child: _Corner(size, thick, false, true, _red),
-      ),
-      Positioned(
-        bottom: pad,
-        right: pad,
-        child: _Corner(size, thick, false, false, _red),
-      ),
-    ];
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PAINTERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _HudBgPainter extends CustomPainter {
-  final Animation<double> anim;
-  _HudBgPainter(this.anim) : super(repaint: anim);
+/// Deep space background with city-glow effect (matches reference image dark BG)
+class _SpaceBgPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
+    // Base dark fill
     canvas.drawRect(
       Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint()..color = const Color(0xFF04010A),
+      Paint()..color = const Color(0xFF03060F),
     );
-    final g = Paint()
-      ..color = const Color(0xFFB400FF).withOpacity(0.03)
+
+    // Blue glow at top center — mimics the reference image's background radiance
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Paint()
+        ..shader = RadialGradient(
+          center: const Alignment(0, -0.5),
+          radius: 1.0,
+          colors: [
+            const Color(0xFF0A84FF).withOpacity(0.10),
+            Colors.transparent,
+          ],
+        ).createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
+    );
+
+    // Subtle grid lines
+    final grid = Paint()
+      ..color = const Color(0xFF0A84FF).withOpacity(0.03)
       ..strokeWidth = 0.5;
-    for (double x = 0; x < size.width; x += 32)
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), g);
-    for (double y = 0; y < size.height; y += 32)
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), g);
+    for (double x = 0; x < size.width; x += 36)
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
+    for (double y = 0; y < size.height; y += 36)
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+
+    // Tiny star dots in upper half
+    final star = Paint()..color = const Color(0xFF60E8FF).withOpacity(0.10);
+    final rng = Random(99);
+    for (int i = 0; i < 28; i++) {
+      canvas.drawCircle(
+        Offset(
+          rng.nextDouble() * size.width,
+          rng.nextDouble() * size.height * 0.55,
+        ),
+        0.7,
+        star,
+      );
+    }
   }
 
   @override
   bool shouldRepaint(_) => false;
 }
 
-class _HudRingPainter extends CustomPainter {
+/// Holographic rotating ring — matches the circular UI arcs in the reference image
+class _HoloRingPainter extends CustomPainter {
   final double t;
   final Color color;
-  _HudRingPainter(this.t, this.color);
+  _HoloRingPainter(this.t, this.color);
+
   @override
   void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2, cy = size.height / 2;
-    void arc(double r, double s, double sw, Color c, double w) =>
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+
+    void arc(double r, double start, double sweep, Color c, double w) =>
         canvas.drawArc(
           Rect.fromCircle(center: Offset(cx, cy), radius: r),
-          s,
-          sw,
+          start,
+          sweep,
           false,
           Paint()
             ..color = c
@@ -1793,6 +1868,7 @@ class _HudRingPainter extends CustomPainter {
             ..style = PaintingStyle.stroke
             ..strokeCap = StrokeCap.round,
         );
+
     void ring(double r, Color c) => canvas.drawCircle(
       Offset(cx, cy),
       r,
@@ -1801,78 +1877,44 @@ class _HudRingPainter extends CustomPainter {
         ..strokeWidth = 0.5
         ..style = PaintingStyle.stroke,
     );
-    ring(128, color.withOpacity(0.07));
-    ring(104, const Color(0xFFCC0033).withOpacity(0.06));
-    ring(82, color.withOpacity(0.05));
+
     final a = t * 2 * pi;
-    arc(128, a, pi * 0.65, color.withOpacity(0.55), 1.8);
-    arc(128, a + pi, pi * 0.42, const Color(0xFFCC0033).withOpacity(0.45), 1.8);
-    arc(104, -a * 0.7, pi * 0.55, color.withOpacity(0.32), 1.2);
-    arc(
-      104,
-      -a * 0.7 + pi,
-      pi * 0.30,
-      const Color(0xFFCC0033).withOpacity(0.28),
-      1.0,
-    );
+    const baseBlue = Color(0xFF0A84FF);
+
+    // Static rings
+    ring(132, color.withOpacity(0.06));
+    ring(108, baseBlue.withOpacity(0.07));
+    ring(86, color.withOpacity(0.05));
+
+    // Rotating arcs — matches reference image's circular holographic UI
+    arc(132, a, pi * 0.62, color.withOpacity(0.48), 1.5);
+    arc(132, a + pi, pi * 0.38, baseBlue.withOpacity(0.32), 1.5);
+    arc(108, -a * 0.75, pi * 0.50, color.withOpacity(0.26), 1.0);
+    arc(108, -a * 0.75 + pi, pi * 0.28, baseBlue.withOpacity(0.20), 0.8);
+
+    // Cardinal tick marks
     for (int i = 0; i < 4; i++) {
-      final angle = i * pi / 2;
+      final angle = i * pi / 2 + a * 0.04;
       canvas.drawLine(
-        Offset(cx + cos(angle) * 120, cy + sin(angle) * 120),
-        Offset(cx + cos(angle) * 134, cy + sin(angle) * 134),
+        Offset(cx + cos(angle) * 124, cy + sin(angle) * 124),
+        Offset(cx + cos(angle) * 136, cy + sin(angle) * 136),
         Paint()
-          ..color = (i % 2 == 0 ? color : const Color(0xFFCC0033)).withOpacity(
-            0.7,
-          )
-          ..strokeWidth = 1.8,
+          ..color = color.withOpacity(0.55)
+          ..strokeWidth = 1.5,
       );
     }
-    for (int i = 0; i < 8; i++) {
-      final angle = i * pi / 4 + a * 0.12;
+
+    // Orbiting dots
+    for (int i = 0; i < 6; i++) {
+      final angle = i * pi / 3 + a * 0.18;
       canvas.drawCircle(
-        Offset(cx + cos(angle) * 128, cy + sin(angle) * 128),
-        2.2,
-        Paint()..color = color.withOpacity(0.35),
+        Offset(cx + cos(angle) * 132, cy + sin(angle) * 132),
+        1.8,
+        Paint()..color = color.withOpacity(0.28),
       );
     }
   }
 
   @override
-  bool shouldRepaint(_HudRingPainter old) => old.t != t || old.color != color;
-}
-
-class _Corner extends StatelessWidget {
-  final double size, thick;
-  final bool top, left;
-  final Color color;
-  const _Corner(this.size, this.thick, this.top, this.left, this.color);
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    width: size,
-    height: size,
-    child: CustomPaint(painter: _CornerPainter(thick, top, left, color)),
-  );
-}
-
-class _CornerPainter extends CustomPainter {
-  final double thick;
-  final bool top, left;
-  final Color color;
-  const _CornerPainter(this.thick, this.top, this.left, this.color);
-  @override
-  void paint(Canvas canvas, Size size) {
-    final p = Paint()
-      ..color = color
-      ..strokeWidth = thick
-      ..style = PaintingStyle.stroke;
-    final x = left ? 0.0 : size.width;
-    final y = top ? 0.0 : size.height;
-    final dx = left ? size.width : -size.width;
-    final dy = top ? size.height : -size.height;
-    canvas.drawLine(Offset(x, y), Offset(x + dx, y), p);
-    canvas.drawLine(Offset(x, y), Offset(x, y + dy), p);
-  }
-
-  @override
-  bool shouldRepaint(_) => false;
+  bool shouldRepaint(_HoloRingPainter old) => old.t != t || old.color != color;
 }
