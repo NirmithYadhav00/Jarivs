@@ -75,36 +75,65 @@ class TTSService {
   }
 
   // ── ElevenLabs API ──────────────────────────────────────────
-  Future<Uint8List?> _fetchAudio(String text) async {
-    try {
-      final res = await http.post(
-        Uri.parse('https://api.elevenlabs.io/v1/text-to-speech/$_voiceId'),
-        headers: {
-          'xi-api-key': _apiKey,
-          'Content-Type': 'application/json',
-          'Accept': 'audio/mpeg',
-        },
-        body: jsonEncode({
-          'text': text,
-          'model_id': _model,
-          'voice_settings': {
-            'stability': 0.5,
-            'similarity_boost': 0.75,
-            'style': 0.0,
-            'use_speaker_boost': true,
-          },
-        }),
-      );
+  // Future<Uint8List?> _fetchAudio(String text) async {
+  //   try {
+  //     final res = await http.post(
+  //       Uri.parse('https://api.elevenlabs.io/v1/text-to-speech/$_voiceId'),
+  //       headers: {
+  //         'xi-api-key': _apiKey,
+  //         'Content-Type': 'application/json',
+  //         'Accept': 'audio/mpeg',
+  //       },
+  //       body: jsonEncode({
+  //         'text': text,
+  //         'model_id': _model,
+  //         'voice_settings': {
+  //           'stability': 0.5,
+  //           'similarity_boost': 0.75,
+  //           'style': 0.0,
+  //           'use_speaker_boost': true,
+  //         },
+  //       }),
+  //     );
 
-      if (res.statusCode == 200) return res.bodyBytes;
-      debugPrint('[TTS] API error: ${res.statusCode} ${res.body}');
-      return null;
-    } catch (e) {
-      debugPrint('[TTS] Fetch error: $e');
-      return null;
+  //     if (res.statusCode == 200) return res.bodyBytes;
+  //     debugPrint('[TTS] API error: ${res.statusCode} ${res.body}');
+  //     return null;
+  //   } catch (e) {
+  //     debugPrint('[TTS] Fetch error: $e');
+  //     return null;
+  //   }
+  // }
+
+Future<Uint8List?> _fetchAudio(String text) async {
+  try {
+    final res = await http.post(
+      Uri.parse('https://api.elevenlabs.io/v1/text-to-speech/$_voiceId'),
+      headers: {
+        'xi-api-key': _apiKey,
+        'Content-Type': 'application/json',
+        'Accept': 'audio/mpeg',
+      },
+      body: jsonEncode({
+        'text': text,
+        'model_id': _model,
+      }),
+    );
+
+    print("STATUS = ${res.statusCode}");
+    print("HEADERS = ${res.headers}");
+    print("BODY = ${res.body}");
+
+    if (res.statusCode == 200) {
+      return res.bodyBytes;
     }
-  }
 
+    return null;
+  } catch (e) {
+    print(e);
+    return null;
+  }
+}
   // ── Amplitude simulation ─────────────────────────────────────
   void _startAmplitude() {
     _ampTimer?.cancel();
