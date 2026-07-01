@@ -37,18 +37,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> saveProfile() async {
-    setState(() {
-      loading = true;
-    });
+    setState(() => loading = true);
 
     await _service.updateProfile(
       name: nameController.text.trim(),
-      photoUrl: photoController.text.trim(),
+      photoUrl: widget.profile.photoUrl,
     );
 
-    setState(() {
-      loading = false;
-    });
+    if (!mounted) return;
+
+    setState(() => loading = false);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Profile Updated Successfully")),
+    );
 
     Navigator.pop(context);
   }
@@ -56,37 +58,66 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Edit Profile")),
+      backgroundColor: const Color(0xFF050B14),
 
-      body: Padding(
-        padding: const EdgeInsets.all(20),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: const Text("Edit Profile"),
+        centerTitle: true,
+      ),
+
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
 
         child: Column(
           children: [
+            const CircleAvatar(
+              radius: 55,
+              backgroundColor: Color(0xFF2E8FFF),
+              child: Icon(Icons.person, size: 60, color: Colors.white),
+            ),
+
+            const SizedBox(height: 30),
+
             TextField(
               controller: nameController,
-              decoration: const InputDecoration(labelText: "Name"),
+              decoration: InputDecoration(
+                labelText: "Name",
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
             ),
 
             const SizedBox(height: 20),
 
-            // TextField(
-            //   controller: photoController,
-            //   decoration: const InputDecoration(
-            //     labelText: "Avatar URL",
-            //   ),
-            // ),
+            TextField(
+              enabled: false,
+              controller: TextEditingController(text: widget.profile.email),
+              decoration: InputDecoration(
+                labelText: "Email",
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+
             const SizedBox(height: 40),
 
             SizedBox(
               width: double.infinity,
+              height: 55,
 
               child: ElevatedButton(
                 onPressed: loading ? null : saveProfile,
 
                 child: loading
                     ? const CircularProgressIndicator()
-                    : const Text("Save"),
+                    : const Text(
+                        "Save Changes",
+                        style: TextStyle(fontSize: 16),
+                      ),
               ),
             ),
           ],
