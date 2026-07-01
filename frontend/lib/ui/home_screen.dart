@@ -195,9 +195,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late Animation<double> _ringAnim;
   late Animation<double> _pulseAnim;
   late Animation<double> _scanAnim;
+  // ignore: unused_field
   late Animation<double> _floatAnim;
 
   String _responseTime = "0.00s";
+
+  // ── Sidebar state (new) ─────────────────────────────────────────────────
+  bool _sidebarOpen = false;
+  bool _profileMenuOpen = false;
+
+  // Placeholder chat history — wire this up to your real chat storage later
+  final List<String> _chatHistory = [
+    "Trip planning to Goa",
+    "Fix wifi settings",
+    "Set alarm for tomorrow",
+    "Call mom",
+  ];
 
   final Map<String, String> priorityApps = {
     "google": "com.google.android.googlequicksearchbox",
@@ -475,12 +488,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
       if (message != null && message.isNotEmpty) {
         _avatarKey.currentState?.setThinking(false);
+        final String safeMessage = message;
         if (mounted)
           setState(() {
             currentState = LuckyState.talking;
-            _text = message!;
+            _text = safeMessage;
           });
-        await _tts.speak(message!);
+        await _tts.speak(safeMessage);
         int waited = 0;
         while (_tts.isSpeaking && waited < 30000) {
           await Future.delayed(const Duration(milliseconds: 100));
@@ -1164,6 +1178,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
+  // SIDEBAR — new logic, isolated from everything above
+  // ══════════════════════════════════════════════════════════════════════════
+  void _toggleSidebar() {
+    setState(() {
+      _sidebarOpen = !_sidebarOpen;
+      if (!_sidebarOpen) _profileMenuOpen = false;
+    });
+  }
+
+  void _closeSidebar() {
+    if (!_sidebarOpen && !_profileMenuOpen) return;
+    setState(() {
+      _sidebarOpen = false;
+      _profileMenuOpen = false;
+    });
+  }
+
+  void _toggleProfileMenu() {
+    setState(() {
+      _profileMenuOpen = !_profileMenuOpen;
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   // BUILD
   // ══════════════════════════════════════════════════════════════════════════
   @override
@@ -1231,6 +1269,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ],
             ),
           ),
+
+          // ── Sidebar dim overlay (new) ─────────────────────────────────
+          IgnorePointer(
+            ignoring: !_sidebarOpen,
+            child: GestureDetector(
+              onTap: _closeSidebar,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 220),
+                opacity: _sidebarOpen ? 1 : 0,
+                child: Container(color: Colors.black.withOpacity(0.55)),
+              ),
+            ),
+          ),
+
+          // ── Sidebar panel (new) ───────────────────────────────────────
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic,
+            top: 0,
+            bottom: 0,
+            left: _sidebarOpen ? 0 : -300,
+            width: 300,
+            child: _buildSidebar(),
+          ),
         ],
       ),
     );
@@ -1243,73 +1305,99 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Left: Logo + subtitle
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          // Left: Menu button + Logo + subtitle
+          Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                children: [
-                  // Glowing indicator dot
-                  Container(
-                    width: 7,
-                    height: 7,
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _cyan,
-                      boxShadow: [
-                        BoxShadow(color: _cyan.withOpacity(0.9), blurRadius: 8),
-                      ],
-                    ),
+              GestureDetector(
+                onTap: _toggleSidebar,
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  margin: const EdgeInsets.only(right: 10),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _cyan.withOpacity(0.08),
+                    border: Border.all(color: _cyan.withOpacity(0.35)),
                   ),
-                  ShaderMask(
-                    shaderCallback: (b) => const LinearGradient(
-                      colors: [_cyanLight, _cyan, _blue],
-                    ).createShader(b),
-                    child: const Text(
-                      "L.U.C.K.Y",
-                      style: TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 4,
-                        color: Colors.white,
-                      ),
-                    ),
+                  child: Icon(
+                    Icons.menu_rounded,
+                    color: _cyan.withOpacity(0.85),
+                    size: 18,
                   ),
-                ],
+                ),
               ),
-              const SizedBox(height: 3),
-              Row(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    "PERSONAL AI  ",
-                    style: TextStyle(
-                      fontSize: 8,
-                      letterSpacing: 2.5,
-                      color: _cyan.withOpacity(0.45),
-                      fontFamily: 'monospace',
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: _cyan.withOpacity(0.5)),
-                      borderRadius: BorderRadius.circular(3),
-                      color: _cyan.withOpacity(0.08),
-                    ),
-                    child: Text(
-                      "ONLINE",
-                      style: TextStyle(
-                        fontSize: 7,
-                        letterSpacing: 1.5,
-                        color: _cyan,
-                        fontFamily: 'monospace',
+                  Row(
+                    children: [
+                      // Glowing indicator dot
+                      Container(
+                        width: 7,
+                        height: 7,
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _cyan,
+                          boxShadow: [
+                            BoxShadow(
+                              color: _cyan.withOpacity(0.9),
+                              blurRadius: 8,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
+                      ShaderMask(
+                        shaderCallback: (b) => const LinearGradient(
+                          colors: [_cyanLight, _cyan, _blue],
+                        ).createShader(b),
+                        child: const Text(
+                          "L.U.C.K.Y",
+                          style: TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 4,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      Text(
+                        "PERSONAL AI  ",
+                        style: TextStyle(
+                          fontSize: 8,
+                          letterSpacing: 2.5,
+                          color: _cyan.withOpacity(0.45),
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: _cyan.withOpacity(0.5)),
+                          borderRadius: BorderRadius.circular(3),
+                          color: _cyan.withOpacity(0.08),
+                        ),
+                        child: Text(
+                          "ONLINE",
+                          style: TextStyle(
+                            fontSize: 7,
+                            letterSpacing: 1.5,
+                            color: _cyan,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -1767,6 +1855,295 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
         ),
       ],
+    );
+  }
+
+  // ── Sidebar UI (new) ────────────────────────────────────────────────────
+  Widget _buildSidebar() {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        decoration: BoxDecoration(
+          color: _bgPanel,
+          border: Border(right: BorderSide(color: _cyan.withOpacity(0.15))),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.5),
+              blurRadius: 24,
+              offset: const Offset(4, 0),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 10, 10),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    ShaderMask(
+                      shaderCallback: (b) => const LinearGradient(
+                        colors: [_cyanLight, _cyan, _blue],
+                      ).createShader(b),
+                      child: const Text(
+                        "L.U.C.K.Y",
+                        style: TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 3,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: _closeSidebar,
+                      child: Icon(
+                        Icons.close_rounded,
+                        color: _cyan.withOpacity(0.7),
+                        size: 20,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // New chat button
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 4, 14, 4),
+                child: GestureDetector(
+                  onTap: () {
+                    _closeSidebar();
+                    // TODO: hook up new-chat logic
+                  },
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      color: _cyan.withOpacity(0.10),
+                      border: Border.all(color: _cyan.withOpacity(0.45)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.add_rounded, color: _cyan, size: 18),
+                        const SizedBox(width: 8),
+                        Text(
+                          "New Chat",
+                          style: TextStyle(
+                            color: _cyan,
+                            fontFamily: 'monospace',
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    "HISTORY",
+                    style: TextStyle(
+                      fontSize: 9,
+                      letterSpacing: 2,
+                      color: _cyan.withOpacity(0.4),
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+
+              // Chat history list
+              Expanded(
+                child: _chatHistory.isEmpty
+                    ? Center(
+                        child: Text(
+                          "No conversations yet",
+                          style: TextStyle(
+                            color: _cyan.withOpacity(0.3),
+                            fontSize: 12,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        itemCount: _chatHistory.length,
+                        itemBuilder: (context, index) {
+                          final title = _chatHistory[index];
+                          return Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(10),
+                              onTap: () {
+                                _closeSidebar();
+                                // TODO: hook up load-chat logic
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 10,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.chat_bubble_outline_rounded,
+                                      color: _cyan.withOpacity(0.55),
+                                      size: 15,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        title,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: _white.withOpacity(0.85),
+                                          fontSize: 12.5,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+
+              Divider(color: _cyan.withOpacity(0.12), height: 1),
+
+              // Profile menu popup (shown above the profile row)
+              if (_profileMenuOpen) _buildProfileMenuItems(),
+
+              // Profile button
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: _toggleProfileMenu,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(colors: [_cyan, _blue]),
+                          ),
+                          alignment: Alignment.center,
+                          child: const Text(
+                            "L",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            "My Profile",
+                            style: TextStyle(
+                              color: _white.withOpacity(0.9),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        Icon(
+                          _profileMenuOpen
+                              ? Icons.expand_more_rounded
+                              : Icons.expand_less_rounded,
+                          color: _cyan.withOpacity(0.6),
+                          size: 18,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileMenuItems() {
+    Widget item(IconData icon, String label, VoidCallback onTap) {
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+            child: Row(
+              children: [
+                Icon(icon, color: _cyan.withOpacity(0.65), size: 17),
+                const SizedBox(width: 12),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: _white.withOpacity(0.85),
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(10, 4, 10, 0),
+      decoration: BoxDecoration(
+        color: _bgCard,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _cyan.withOpacity(0.15)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          item(Icons.settings_outlined, "Settings", () {
+            _closeSidebar();
+            // TODO: navigate to Settings screen
+          }),
+          item(Icons.language_rounded, "Language", () {
+            _closeSidebar();
+            // TODO: navigate to Language screen
+          }),
+          item(Icons.help_outline_rounded, "Get help", () {
+            _closeSidebar();
+            // TODO: navigate to Get help screen
+          }),
+          item(Icons.info_outline_rounded, "Learn more", () {
+            _closeSidebar();
+            // TODO: navigate to Learn more screen
+          }),
+          Divider(color: _cyan.withOpacity(0.12), height: 1),
+          item(Icons.logout_rounded, "Logout", () {
+            _closeSidebar();
+            // TODO: hook up logout logic
+          }),
+        ],
+      ),
     );
   }
 

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1087992886722",
+    "project_id": "lucky-ai-eb8c9",
+    "storage_bucket": "lucky-ai-eb8c9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1087992886722:android:8a576771e714a76e45d25b",
+        "android_client_info": {
+          "package_name": "com.example.frontend"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDzf4yvFthw5HiLyH_QICtB3fpiPj4GxgQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
