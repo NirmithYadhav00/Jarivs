@@ -16,6 +16,8 @@ import 'package:flutter_tts/flutter_tts.dart';
 import '../models/lucky_state.dart';
 import '../widgets/lucky_avatar.dart';
 import '../widgets/profile_header.dart';
+import 'settings_screen.dart';
+import '../auth/auth_service.dart';
 
 class _WaveformWidget extends StatefulWidget {
   final LuckyState state;
@@ -2023,6 +2025,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
               // Profile button
               ProfileHeader(),
+              ListTile(
+                leading: const Icon(Icons.settings, color: Colors.white),
+                title: const Text(
+                  "Settings",
+                  style: TextStyle(color: Colors.white),
+                ),
+                onTap: () {
+                  _closeSidebar();
+
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => SettingsScreen()),
+                  );
+                },
+              ),
             ],
           ),
         ),
@@ -2068,7 +2085,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         children: [
           item(Icons.settings_outlined, "Settings", () {
             _closeSidebar();
-            // TODO: navigate to Settings screen
+
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => SettingsScreen()),
+            );
           }),
           item(Icons.language_rounded, "Language", () {
             _closeSidebar();
@@ -2083,9 +2104,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             // TODO: navigate to Learn more screen
           }),
           Divider(color: _cyan.withOpacity(0.12), height: 1),
-          item(Icons.logout_rounded, "Logout", () {
+          item(Icons.logout_rounded, "Logout", () async {
             _closeSidebar();
-            // TODO: hook up logout logic
+
+            await AuthService().logout();
           }),
         ],
       ),
