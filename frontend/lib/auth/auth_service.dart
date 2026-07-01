@@ -5,10 +5,8 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Current User
   User? get currentUser => _auth.currentUser;
 
-  // Auth State
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
   // ==========================================================
@@ -29,14 +27,19 @@ class AuthService {
       final user = credential.user;
 
       if (user != null) {
+        print("Creating Firestore user...");
+
         await _firestore.collection("users").doc(user.uid).set({
           "uid": user.uid,
+          "name": "",
           "email": user.email,
-          "createdAt": FieldValue.serverTimestamp(),
-          "lastLogin": FieldValue.serverTimestamp(),
-          "displayName": "",
           "photoUrl": "",
+          "createdAt": FieldValue.serverTimestamp(),
+          "updatedAt": FieldValue.serverTimestamp(),
+          "lastLogin": FieldValue.serverTimestamp(),
         });
+
+        print("Firestore user created successfully");
       }
 
       return null;
@@ -62,13 +65,34 @@ class AuthService {
         password: password,
       );
 
-      if (credential.user != null) {
-        await _firestore
-            .collection("users")
-            .doc(credential.user!.uid)
-            .update({
-          "lastLogin": FieldValue.serverTimestamp(),
-        });
+      final user = credential.user;
+
+      if (user != null) {
+        final doc =
+            _firestore.collection("users").doc(user.uid);
+
+        final snapshot = await doc.get();
+
+        // If profile doesn't exist, create it
+        if (!snapshot.exists) {
+          print("User profile not found. Creating...");
+
+          await doc.set({
+            "uid": user.uid,
+            "name": "",
+            "email": user.email,
+            "photoUrl": "",
+            "createdAt": FieldValue.serverTimestamp(),
+            "updatedAt": FieldValue.serverTimestamp(),
+            "lastLogin": FieldValue.serverTimestamp(),
+          });
+
+          print("Profile created.");
+        } else {
+          await doc.update({
+            "lastLogin": FieldValue.serverTimestamp(),
+          });
+        }
       }
 
       return null;
@@ -93,9 +117,7 @@ class AuthService {
 
   Future<String?> resetPassword(String email) async {
     try {
-      await _auth.sendPasswordResetEmail(
-        email: email,
-      );
+      await _auth.sendPasswordResetEmail(email: email);
       return null;
     } on FirebaseAuthException catch (e) {
       return e.message;
@@ -120,6 +142,8 @@ class AuthService {
   // ==========================================================
 
   Future<void> updateUser(Map<String, dynamic> data) async {
+    data["updatedAt"] = FieldValue.serverTimestamp();
+
     await _firestore
         .collection("users")
         .doc(currentUser!.uid)

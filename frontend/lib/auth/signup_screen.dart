@@ -77,10 +77,7 @@ class _SignupScreenState extends State<SignupScreen>
 
     setState(() => _loading = true);
 
-    final error = await _auth.signUp(
-      email: email,
-      password: password,
-    );
+    final error = await _auth.signUp(email: email, password: password);
 
     setState(() => _loading = false);
 
@@ -88,24 +85,15 @@ class _SignupScreenState extends State<SignupScreen>
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Account created successfully!"),
-        ),
+        const SnackBar(content: Text("Account created successfully!")),
       );
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-      );
-    } else {
-      _showMessage(error);
+      Navigator.of(context).pop();
     }
   }
 
   void _showMessage(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg)),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   // ---- UI -----------------------------------------------------------------
@@ -420,11 +408,7 @@ class _SignupScreenState extends State<SignupScreen>
       children: [
         Text(
           'Already have an account? ',
-          style: TextStyle(
-            fontFamily: 'monospace',
-            color: kHint,
-            fontSize: 13,
-          ),
+          style: TextStyle(fontFamily: 'monospace', color: kHint, fontSize: 13),
         ),
         GestureDetector(
           onTap: () {
@@ -516,7 +500,11 @@ class _RadarPainter extends CustomPainter {
   }
 
   void _drawDottedCircle(
-      Canvas canvas, Offset center, double radius, Color color) {
+    Canvas canvas,
+    Offset center,
+    double radius,
+    Color color,
+  ) {
     final paint = Paint()..color = color;
     const dashCount = 90;
     for (int i = 0; i < dashCount; i++) {

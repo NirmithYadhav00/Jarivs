@@ -69,6 +69,30 @@ class _LoginScreenState extends State<LoginScreen>
     return null;
   }
 
+  // Future<void> _handleLogin() async {
+  //     if (!_formKey.currentState!.validate()) return;
+
+  //     setState(() => _isLoading = true);
+
+  //     final error = await _auth.login(
+  //       email: _usernameController.text.trim(),
+  //       password: _passwordController.text.trim(),
+  //     );
+
+  //     if (error != null) {
+  //       if (!mounted) return;
+
+  //       ScaffoldMessenger.of(
+  //         context,
+  //       ).showSnackBar(SnackBar(content: Text(error)));
+
+  //       setState(() => _isLoading = false);
+  //       return;
+  //     }
+
+  //     setState(() => _isLoading = false);
+  //   }
+
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -79,18 +103,20 @@ class _LoginScreenState extends State<LoginScreen>
       password: _passwordController.text.trim(),
     );
 
-    if (error != null) {
-      if (!mounted) return;
+    print("LOGIN RESULT: $error");
 
+    if (!mounted) return;
+
+    setState(() => _isLoading = false);
+
+    if (error != null) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(error)));
-
-      setState(() => _isLoading = false);
       return;
     }
 
-    setState(() => _isLoading = false);
+    print("LOGIN SUCCESS");
   }
 
   // ---- UI -------------------------------------------------------------------

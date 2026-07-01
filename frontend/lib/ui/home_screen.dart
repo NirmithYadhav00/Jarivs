@@ -15,10 +15,8 @@ import 'package:string_similarity/string_similarity.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import '../models/lucky_state.dart';
 import '../widgets/lucky_avatar.dart';
+import '../widgets/profile_header.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Waveform widget — only animates when listening/talking
-// ─────────────────────────────────────────────────────────────────────────────
 class _WaveformWidget extends StatefulWidget {
   final LuckyState state;
   final Color color1;
@@ -116,9 +114,6 @@ class _WaveformWidgetState extends State<_WaveformWidget> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Holographic icon — matches the glowing circle icons in the reference image
-// ─────────────────────────────────────────────────────────────────────────────
 class _HoloIcon extends StatelessWidget {
   final IconData icon;
   final Color color;
@@ -160,9 +155,6 @@ class _HoloIcon extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HomeScreen
-// ─────────────────────────────────────────────────────────────────────────────
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
   @override
@@ -2030,54 +2022,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               if (_profileMenuOpen) _buildProfileMenuItems(),
 
               // Profile button
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: _toggleProfileMenu,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 34,
-                          height: 34,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: LinearGradient(colors: [_cyan, _blue]),
-                          ),
-                          alignment: Alignment.center,
-                          child: const Text(
-                            "L",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            "My Profile",
-                            style: TextStyle(
-                              color: _white.withOpacity(0.9),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        Icon(
-                          _profileMenuOpen
-                              ? Icons.expand_more_rounded
-                              : Icons.expand_less_rounded,
-                          color: _cyan.withOpacity(0.6),
-                          size: 18,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+              ProfileHeader(),
             ],
           ),
         ),
